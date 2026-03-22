@@ -2,28 +2,23 @@ import { z } from 'zod';
 import { tool, type CoreTool } from 'ai';
 import { DUMMY_SKILLS, type SkillDefinition } from './config.js';
 
-// Tools that require structured definitions — without these, the model fabricates results in text
-// Each tool has aliases to match common variations in skill descriptions
-const KNOWN_TOOLS: Record<string, { description: string; parameters: z.ZodType; aliases: string[] }> = {
+// Tools provided to the model during compliance testing, matching what real agent hosts offer
+const KNOWN_TOOLS: Record<string, { description: string; parameters: z.ZodType }> = {
   WebFetch: {
     description: 'Fetch content from a URL',
     parameters: z.object({ url: z.string().describe('The URL to fetch') }),
-    aliases: ['WebFetch', 'web_fetch', 'fetch'],
   },
   WebSearch: {
     description: 'Search the web for information',
     parameters: z.object({ query: z.string().describe('The search query') }),
-    aliases: ['WebSearch', 'web_search', 'web search'],
   },
   BraveSearch: {
     description: 'Search the web using Brave Search',
     parameters: z.object({ query: z.string().describe('The search query') }),
-    aliases: ['BraveSearch', 'brave_search', 'Brave Search', 'brave search'],
   },
   Read: {
     description: 'Read a file from the filesystem',
     parameters: z.object({ file_path: z.string().describe('The file path to read') }),
-    aliases: ['Read', 'read_file', 'read file'],
   },
   Write: {
     description: 'Write content to a file',
@@ -31,7 +26,6 @@ const KNOWN_TOOLS: Record<string, { description: string; parameters: z.ZodType; 
       file_path: z.string().describe('The file path to write'),
       content: z.string().describe('The content to write'),
     }),
-    aliases: ['Write', 'write_file', 'write file'],
   },
   Edit: {
     description: 'Edit a file by replacing text',
@@ -40,12 +34,10 @@ const KNOWN_TOOLS: Record<string, { description: string; parameters: z.ZodType; 
       old_string: z.string().describe('The text to replace'),
       new_string: z.string().describe('The replacement text'),
     }),
-    aliases: ['Edit', 'edit_file', 'edit file'],
   },
   Bash: {
     description: 'Execute a shell command',
     parameters: z.object({ command: z.string().describe('The command to execute') }),
-    aliases: ['Bash', 'bash', 'shell', 'terminal', 'run command'],
   },
   Grep: {
     description: 'Search file contents using regex',
@@ -53,12 +45,10 @@ const KNOWN_TOOLS: Record<string, { description: string; parameters: z.ZodType; 
       pattern: z.string().describe('The regex pattern to search for'),
       path: z.string().optional().describe('The directory to search in'),
     }),
-    aliases: ['Grep', 'grep', 'search files'],
   },
   Glob: {
     description: 'Find files matching a pattern',
     parameters: z.object({ pattern: z.string().describe('The glob pattern') }),
-    aliases: ['Glob', 'glob', 'find files'],
   },
   NotebookEdit: {
     description: 'Edit a Jupyter notebook cell',
@@ -67,17 +57,14 @@ const KNOWN_TOOLS: Record<string, { description: string; parameters: z.ZodType; 
       cell: z.number().describe('The cell index'),
       new_source: z.string().describe('The new cell content'),
     }),
-    aliases: ['NotebookEdit', 'notebook_edit', 'notebook edit'],
   },
   code_interpreter: {
     description: 'Execute Python code in a sandbox',
     parameters: z.object({ code: z.string().describe('The Python code to execute') }),
-    aliases: ['code_interpreter', 'code interpreter', 'python'],
   },
   browser: {
     description: 'Browse a web page',
     parameters: z.object({ url: z.string().describe('The URL to browse') }),
-    aliases: ['browser', 'browse', 'web browser'],
   },
 };
 
@@ -113,24 +100,16 @@ ${allSkills.join('\n')}
 </available_skills>`;
 }
 
-export function extractMockTools(skill: SkillDefinition): Record<string, CoreTool> {
+export function buildMockTools(): Record<string, CoreTool> {
   const tools: Record<string, CoreTool> = {};
-  const body = skill.body;
 
   for (const [name, def] of Object.entries(KNOWN_TOOLS)) {
-    const matched = def.aliases.some(alias => {
-      const pattern = new RegExp('\\b' + alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i');
-      return pattern.test(body);
+    tools[name] = tool({
+      description: def.description,
+      parameters: def.parameters as z.ZodObject<z.ZodRawShape>,
+      execute: async () => `[Mock result from ${name}]`,
     });
-    if (matched) {
-      tools[name] = tool({
-        description: def.description,
-        parameters: def.parameters as z.ZodObject<z.ZodRawShape>,
-        execute: async () => `[Mock result from ${name}]`,
-      });
-    }
   }
-
 
   return tools;
 }

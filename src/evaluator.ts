@@ -1,5 +1,5 @@
 import { generateText, type LanguageModel } from 'ai';
-import { buildComplianceSystemPrompt, extractMockTools } from './context-builder.js';
+import { buildComplianceSystemPrompt, buildMockTools } from './context-builder.js';
 import type {
   ComplianceEval,
   EvalReport,
@@ -140,7 +140,7 @@ export async function evaluateResults(
   const total = testResults.length;
   let completed = 0;
 
-  const mockTools = extractMockTools(skill);
+  const mockTools = buildMockTools();
   const toolNames = Object.keys(mockTools);
   const complianceSystemPrompt = buildComplianceSystemPrompt(skill);
 
@@ -195,7 +195,7 @@ export async function evaluateResults(
           if (toolNames.length > 0) {
             process.stderr.write(` (mock tools: ${toolNames.join(', ')})`);
           }
-          const { text: complianceResponse, toolCalls } = await generateText({
+          const { text: complianceResponse, toolCalls, steps } = await generateText({
             model: modelEntry.model,
             messages: [
               { role: 'system', content: complianceSystemPrompt },
@@ -206,12 +206,22 @@ export async function evaluateResults(
             temperature: 0.3,
           });
 
-          // Build a summary of what the model did for the judge
-          const toolCallSummary = toolCalls && toolCalls.length > 0
-            ? `\n\nTool calls made:\n${toolCalls.map(tc => `- ${tc.toolName}(${JSON.stringify(tc.args)})`).join('\n')}`
+          // Collect all tool calls across all steps
+          const allToolCalls = steps.flatMap(step => step.toolCalls ?? []);
+          const toolCallSummary = allToolCalls.length > 0
+            ? `\n\nTool calls made:\n${allToolCalls.map(tc => `- ${tc.toolName}(${JSON.stringify(tc.args)})`).join('\n')}`
             : '\n\nNo tool calls were made.';
           const fullResponse = complianceResponse + toolCallSummary;
-          process.stderr.write(` done\n`);
+          process.stderr.write(` done (${allToolCalls.length} tool calls, ${steps.length} steps)\n`);
+
+          if (verbose) {
+            if (allToolCalls.length > 0) {
+              process.stderr.write(`    Tool calls:\n`);
+              for (const tc of allToolCalls) {
+                process.stderr.write(`      - ${tc.toolName}(${JSON.stringify(tc.args).slice(0, 100)})\n`);
+              }
+            }
+          }
 
           process.stderr.write(`    Judging compliance...`);
           const judgeText = await generateWithRetry(judgeModels, {

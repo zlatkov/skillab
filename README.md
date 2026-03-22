@@ -87,6 +87,7 @@ Options:
   --judge-model <model>          Model for evaluation judging (comma-separated for fallbacks)
   --json                         Output results as JSON
   --verbose                      Show detailed per-prompt results
+  -n, --count <number>           Number of positive+negative test prompts (default: 5, so 5+5=10 total)
   --prompts <path>               Path to JSON file with custom test prompts
   -V, --version                  Output the version number
   -h, --help                     Display help
@@ -99,7 +100,7 @@ Options:
 | Role | Flag | Default | Description |
 |---|---|---|---|
 | **Test models** | `-m, --models` | 5 free OpenRouter models | The models being evaluated. These receive the skill-injected prompt and are scored on how well they trigger and follow the skill. |
-| **Generator models** | `--generator-model` | 3 free OpenRouter models (with fallback) | Generate the 10 test prompts (5 positive, 5 negative) from the skill definition. You can provide comma-separated model IDs for fallback. |
+| **Generator models** | `--generator-model` | 3 free OpenRouter models (with fallback) | Generate test prompts (positive + negative) from the skill definition. Count configurable via `-n`. You can provide comma-separated model IDs for fallback. |
 | **Judge models** | `--judge-model` | 3 free OpenRouter models (with fallback) | Evaluate each test model's response — did it correctly trigger the skill? Did it follow instructions? You can provide comma-separated model IDs for fallback. |
 
 The generator and judge models always run through OpenRouter (even if you set a different `--provider`). Only the test models use your specified provider.
@@ -135,6 +136,9 @@ npx skilleval ./SKILL.md --prompts ./my-test-prompts.json
 
 # Machine-readable output
 npx skilleval ./SKILL.md --json
+
+# Quick test with fewer prompts (1 positive + 1 negative)
+npx skilleval ./SKILL.md -n 1
 
 # Detailed per-prompt breakdown
 npx skilleval ./SKILL.md --verbose

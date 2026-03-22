@@ -34,6 +34,7 @@ program
   .option('--verbose', 'Show detailed per-prompt results', false)
   .option('--prompts <path>', 'Path to JSON file with custom test prompts')
   .option('-s, --skill <name>', 'Skill name within the repo (looks for skills/<name>/SKILL.md)')
+  .option('-n, --count <number>', 'Number of positive+negative test prompts (default: 5+5)', '5')
   .action(async (skillSource: string, opts) => {
     try {
       const provider = opts.provider as ProviderName;
@@ -100,7 +101,8 @@ program
         ? (opts.generatorModel as string).split(',').map((m: string) => m.trim())
         : DEFAULT_GENERATOR_MODELS;
       const generatorModels = generatorModelIds.map(id => createModel('openrouter', id, internalApiKey));
-      const prompts = await generateTestPrompts(skill, generatorModels, opts.prompts, opts.verbose);
+      const count = parseInt(opts.count, 10);
+      const prompts = await generateTestPrompts(skill, generatorModels, count, opts.prompts, opts.verbose);
       process.stderr.write(chalk.green(`  Generated ${prompts.length} test prompts\n\n`));
 
       // Run trigger tests

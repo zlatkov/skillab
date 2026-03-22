@@ -8,7 +8,7 @@ function stripCodeFences(text: string): string {
   return text.replace(/^```(?:json)?\s*\n?/gm, '').replace(/\n?```\s*$/gm, '').trim();
 }
 
-function validatePrompts(parsed: unknown): TestPrompt[] {
+function validatePrompts(parsed: unknown, count: number): TestPrompt[] {
   if (!Array.isArray(parsed)) throw new Error('Expected JSON array');
 
   const prompts: TestPrompt[] = [];
@@ -25,37 +25,44 @@ function validatePrompts(parsed: unknown): TestPrompt[] {
 
   const positiveCount = prompts.filter(p => p.type === 'positive').length;
   const negativeCount = prompts.filter(p => p.type === 'negative').length;
-  if (positiveCount !== 5 || negativeCount !== 5) {
-    throw new Error(`Expected 5 positive and 5 negative prompts, got ${positiveCount} and ${negativeCount}`);
+  if (positiveCount !== count || negativeCount !== count) {
+    throw new Error(`Expected ${count} positive and ${count} negative prompts, got ${positiveCount} and ${negativeCount}`);
   }
 
   return prompts;
 }
 
-function fallbackPrompts(skill: SkillDefinition): TestPrompt[] {
-  return [
-    { text: `I need help with ${skill.name}`, type: 'positive' },
-    { text: `Can you use the ${skill.name} skill for this task?`, type: 'positive' },
-    { text: `Help me with something related to ${skill.description.toLowerCase()}`, type: 'positive' },
-    { text: `I'd like to ${skill.description.toLowerCase().slice(0, 50)}`, type: 'positive' },
-    { text: `Please assist me with ${skill.name} functionality`, type: 'positive' },
-    { text: `What's the weather like today?`, type: 'negative' },
-    { text: `Tell me a joke about programming`, type: 'negative' },
-    { text: `How do I make a cup of coffee?`, type: 'negative' },
-    { text: `What is the capital of France?`, type: 'negative' },
-    { text: `Help me write a haiku about nature`, type: 'negative' },
-  ];
+const ALL_FALLBACK_POSITIVE: ((skill: SkillDefinition) => string)[] = [
+  s => `I need help with ${s.name}`,
+  s => `Can you use the ${s.name} skill for this task?`,
+  s => `Help me with something related to ${s.description.toLowerCase()}`,
+  s => `I'd like to ${s.description.toLowerCase().slice(0, 50)}`,
+  s => `Please assist me with ${s.name} functionality`,
+];
+
+const ALL_FALLBACK_NEGATIVE: string[] = [
+  `What's the weather like today?`,
+  `Tell me a joke about programming`,
+  `How do I make a cup of coffee?`,
+  `What is the capital of France?`,
+  `Help me write a haiku about nature`,
+];
+
+function fallbackPrompts(skill: SkillDefinition, count: number): TestPrompt[] {
+  const positive = ALL_FALLBACK_POSITIVE.slice(0, count).map(fn => ({ text: fn(skill), type: 'positive' as const }));
+  const negative = ALL_FALLBACK_NEGATIVE.slice(0, count).map(text => ({ text, type: 'negative' as const }));
+  return [...positive, ...negative];
 }
 
-const GENERATION_PROMPT = (skill: SkillDefinition) => `Generate test prompts for this AI skill:
+const GENERATION_PROMPT = (skill: SkillDefinition, count: number) => `Generate test prompts for this AI skill:
 Name: ${skill.name}
 Description: ${skill.description}
 
 Content summary (first 500 chars): ${skill.body.slice(0, 500)}
 
-Generate exactly 10 prompts as a JSON array:
-- 5 "positive" prompts that SHOULD trigger this skill (realistic user requests, varied wording)
-- 5 "negative" prompts that should NOT trigger this skill (related but out of scope, or different topics)
+Generate exactly ${count * 2} prompts as a JSON array:
+- ${count} "positive" prompts that SHOULD trigger this skill (realistic user requests, varied wording)
+- ${count} "negative" prompts that should NOT trigger this skill (related but out of scope, or different topics)
 
 Format: [{"text": "...", "type": "positive"}, {"text": "...", "type": "negative"}]
 
@@ -73,13 +80,14 @@ function logPrompts(prompts: TestPrompt[], source: string): void {
 export async function generateTestPrompts(
   skill: SkillDefinition,
   generatorModels: LanguageModel[],
+  count: number,
   customPromptsPath?: string,
   verbose?: boolean,
 ): Promise<TestPrompt[]> {
   // Load custom prompts if provided
   if (customPromptsPath) {
     const raw = await readFile(customPromptsPath, 'utf-8');
-    const prompts = validatePrompts(JSON.parse(raw));
+    const prompts = validatePrompts(JSON.parse(raw), count);
     if (verbose) logPrompts(prompts, 'custom');
     return prompts;
   }
@@ -93,13 +101,13 @@ export async function generateTestPrompts(
           model,
           system: 'You generate test prompts for evaluating AI skill detection. Respond ONLY with a JSON array. No markdown, no explanation.',
           prompt: attempt === 0
-            ? GENERATION_PROMPT(skill)
-            : `${GENERATION_PROMPT(skill)}\n\nYour previous response was invalid JSON. Return ONLY valid JSON.`,
+            ? GENERATION_PROMPT(skill, count)
+            : `${GENERATION_PROMPT(skill, count)}\n\nYour previous response was invalid JSON. Return ONLY valid JSON.`,
           temperature: 0.8,
         });
 
         const cleaned = stripCodeFences(text);
-        const prompts = validatePrompts(JSON.parse(cleaned));
+        const prompts = validatePrompts(JSON.parse(cleaned), count);
         if (verbose) logPrompts(prompts, 'generated');
         return prompts;
       } catch (err) {
@@ -113,7 +121,7 @@ export async function generateTestPrompts(
   }
 
   process.stderr.write('Warning: All generator models failed, using fallback prompts.\n');
-  const prompts = fallbackPrompts(skill);
+  const prompts = fallbackPrompts(skill, count);
   if (verbose) logPrompts(prompts, 'fallback');
   return prompts;
 }
