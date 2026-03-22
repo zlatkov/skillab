@@ -1,0 +1,55 @@
+{
+  "name": "skilleval",
+  "version": "0.1.0",
+  "description": "Evaluate how well AI models understand Agent Skills (SKILL.md files)",
+  "type": "module",
+  "bin": {
+    "skilleval": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zlatkov/skilleval.git"
+  },
+  "bugs": {
+    "url": "https://github.com/zlatkov/skilleval/issues"
+  },
+  "homepage": "https://github.com/zlatkov/skilleval#readme",
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "skills",
+    "eval",
+    "llm",
+    "claude-code",
+    "openrouter",
+    "skilleval"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@ai-sdk/anthropic": "^1.0.0",
+    "@ai-sdk/google": "^1.0.0",
+    "@ai-sdk/openai": "^1.0.0",
+    "ai": "^4.0.0",
+    "chalk": "^5.4.0",
+    "commander": "^13.0.0",
+    "dotenv": "^17.3.1",
+    "gray-matter": "^4.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.7.0"
+  }
+}
