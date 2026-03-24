@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import type { EvalReport, EvalResult } from './config.js';
+import type { BatchSkillReport, EvalReport, EvalResult } from './config.js';
 
 function padRight(str: string, len: number): string {
   return str.length >= len ? str.slice(0, len) : str + ' '.repeat(len - str.length);
@@ -94,6 +94,104 @@ export function printReport(
   if (options.verbose) {
     printVerbose(evalResults);
   } else {
+    console.log(`\nRun with ${chalk.cyan('--verbose')} to see individual test results.`);
+    console.log(`Run with ${chalk.cyan('--json')} to get machine-readable output.`);
+  }
+}
+
+function printBatchSummaryTable(batchResults: BatchSkillReport[]): void {
+  const skillWidth = Math.max(20, ...batchResults.map(b => b.skill.name.length)) + 2;
+  const modelWidth = Math.max(20, ...batchResults.flatMap(b => b.reports.map(r => r.modelId.length))) + 2;
+  const triggerWidth = 14;
+  const complianceWidth = 16;
+  const overallWidth = 9;
+
+  console.log(`\n${chalk.bold('=== Batch Summary ===')}`)
+
+  const line = (left: string, mid: string, right: string, fill: string) =>
+    left + fill.repeat(skillWidth) + mid + fill.repeat(modelWidth) + mid + fill.repeat(triggerWidth) + mid + fill.repeat(complianceWidth) + mid + fill.repeat(overallWidth) + right;
+
+  console.log(line('┌', '┬', '┐', '─'));
+  console.log(
+    '│' + padRight(' Skill', skillWidth) +
+    '│' + padRight(' Model', modelWidth) +
+    '│' + padRight(' Trigger', triggerWidth) +
+    '│' + padRight(' Compliance', complianceWidth) +
+    '│' + padRight(' Overall', overallWidth) + '│',
+  );
+  console.log(line('├', '┼', '┤', '─'));
+
+  for (const batch of batchResults) {
+    let first = true;
+    for (const report of batch.reports) {
+      const skillCell = first ? ` ${batch.skill.name}` : '';
+      first = false;
+
+      const triggerStr = `${report.triggerScore.correct}/${report.triggerScore.total}`;
+      const complianceStr = report.complianceScore.total > 0
+        ? `${report.complianceScore.correct}/${report.complianceScore.total} (${report.complianceScore.avgScore})`
+        : 'N/A';
+      const overallStr = `${report.overall}%`;
+      const color = scoreColor(report.overall);
+
+      console.log(
+        '│' + padRight(skillCell, skillWidth) +
+        '│' + padRight(` ${report.modelId}`, modelWidth) +
+        '│' + padRight(` ${triggerStr}`, triggerWidth) +
+        '│' + padRight(` ${complianceStr}`, complianceWidth) +
+        '│' + color(padRight(` ${overallStr}`, overallWidth)) + '│',
+      );
+    }
+    // Separator between skills (except last)
+    if (batch !== batchResults[batchResults.length - 1]) {
+      console.log(line('├', '┼', '┤', '─'));
+    }
+  }
+
+  console.log(line('└', '┴', '┘', '─'));
+
+  // Averages per skill
+  console.log(`\n${chalk.bold('Average scores per skill:')}`);
+  for (const batch of batchResults) {
+    const avg = batch.reports.length > 0
+      ? Math.round(batch.reports.reduce((sum, r) => sum + r.overall, 0) / batch.reports.length)
+      : 0;
+    const color = scoreColor(avg);
+    console.log(`  ${batch.skill.name}: ${color(`${avg}%`)}`);
+  }
+}
+
+export function printBatchReport(
+  batchResults: BatchSkillReport[],
+  options: { json: boolean; verbose: boolean },
+): void {
+  if (options.json) {
+    const output = batchResults.map(b => ({
+      skill: { name: b.skill.name, description: b.skill.description },
+      reports: b.reports,
+      evalResults: b.evalResults,
+    }));
+    console.log(JSON.stringify(output, null, 2));
+    return;
+  }
+
+  // Print individual skill reports
+  for (const batch of batchResults) {
+    console.log(`\n${chalk.bold.cyan(`─── Skill: ${batch.skill.name} ───`)}`);
+    console.log(`${chalk.dim(batch.skill.description)}`);
+    printTable(batch.reports);
+
+    if (options.verbose) {
+      printVerbose(batch.evalResults);
+    }
+  }
+
+  // Print combined summary
+  if (batchResults.length > 1) {
+    printBatchSummaryTable(batchResults);
+  }
+
+  if (!options.verbose) {
     console.log(`\nRun with ${chalk.cyan('--verbose')} to see individual test results.`);
     console.log(`Run with ${chalk.cyan('--json')} to get machine-readable output.`);
   }

@@ -103,6 +103,27 @@ export const DUMMY_SKILLS = [
   },
 ];
 
+// --- Batch / Scan Types ---
+
+export interface BatchSkillReport {
+  skill: SkillDefinition;
+  reports: EvalReport[];
+  evalResults: EvalResult[];
+}
+
+export interface ScanOptions {
+  provider: ProviderName;
+  models: string[];
+  apiKey: string;
+  internalApiKey: string;
+  generatorModelIds: string[];
+  judgeModelIds: string[];
+  count: number;
+  json: boolean;
+  verbose: boolean;
+  promptsPath?: string;
+}
+
 // --- Model holder for passing around ---
 
 export interface ModelWithId {

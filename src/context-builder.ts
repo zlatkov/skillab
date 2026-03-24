@@ -85,18 +85,29 @@ function buildSkillXml(name: string, description: string, location?: string): st
 </skill>`;
 }
 
-export function buildTriggerSystemPrompt(skill: SkillDefinition): string {
-  const allSkills = [
-    buildSkillXml(DUMMY_SKILLS[0].name, DUMMY_SKILLS[0].description),
-    buildSkillXml(DUMMY_SKILLS[1].name, DUMMY_SKILLS[1].description),
-    buildSkillXml(skill.name, skill.description),
-    buildSkillXml(DUMMY_SKILLS[2].name, DUMMY_SKILLS[2].description),
-  ];
+export function buildTriggerSystemPrompt(skill: SkillDefinition, siblingSkills?: SkillDefinition[]): string {
+  let distractorXmls: string[];
+
+  // Always include dummy skills as distractors
+  distractorXmls = DUMMY_SKILLS.map(d => buildSkillXml(d.name, d.description));
+
+  // Also include real sibling skills when available
+  if (siblingSkills && siblingSkills.length > 0) {
+    const siblingXmls = siblingSkills
+      .filter(s => s.name !== skill.name)
+      .map(s => buildSkillXml(s.name, s.description));
+    distractorXmls.push(...siblingXmls);
+  }
+
+  // Insert target skill at a random-ish position among distractors
+  const targetXml = buildSkillXml(skill.name, skill.description);
+  const insertIdx = Math.min(2, distractorXmls.length);
+  distractorXmls.splice(insertIdx, 0, targetXml);
 
   return `${BASE_SYSTEM_PROMPT}
 
 <available_skills>
-${allSkills.join('\n')}
+${distractorXmls.join('\n')}
 </available_skills>`;
 }
 
