@@ -25,9 +25,9 @@ src/
 
 ## Three Model Roles
 
-1. **Generator models** — generate test prompts from the skill definition. Always use OpenRouter.
+1. **Generator models** — generate test prompts from the skill definition. Use the same provider as test models when custom models are specified via `--generator-model`, otherwise default to free OpenRouter models.
 2. **Test models** — the models being evaluated. Use the provider specified by `--provider`.
-3. **Judge models** — evaluate test model responses. Always use OpenRouter.
+3. **Judge models** — evaluate test model responses. Use the same provider as test models when custom models are specified via `--judge-model`, otherwise default to free OpenRouter models.
 
 Generator and judge models support comma-separated fallbacks and retry with delay.
 

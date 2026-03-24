@@ -59,9 +59,11 @@ Skill Dependency Graph
 
 ## Prerequisites
 
-You need an [OpenRouter](https://openrouter.ai) account. Create a free API key at [openrouter.ai/keys](https://openrouter.ai/keys).
+You need an API key for at least one supported provider. The default provider is [OpenRouter](https://openrouter.ai)  - create a free API key at [openrouter.ai/keys](https://openrouter.ai/keys).
 
-OpenRouter is used for test prompt generation and evaluation judging, and as the default provider for testing models. Even if you use a different provider (Anthropic, OpenAI, Google) for the models being tested, an OpenRouter key is still required for the generator and judge unless you supply custom prompts via `--prompts`.
+When using OpenRouter as your provider, the same key is used for test models, prompt generation, and evaluation judging (using free models by default). When using a different provider (Anthropic, OpenAI, Google, Azure), you can either:
+- Specify your own `--generator-model` and `--judge-model` to use models from that same provider
+- Or set `OPENROUTER_API_KEY` to use the default free OpenRouter models for generation and judging
 
 **Free model limitations:** OpenRouter's free models (those ending in `:free`) are subject to upstream rate limits and may be temporarily unavailable. If you encounter rate limit errors, you can:
 - Wait and retry  - free model availability fluctuates
@@ -217,7 +219,7 @@ Options:
 | **Generator models** | `--generator-model` | 3 free OpenRouter models (with fallback) | Generate test prompts (positive + negative) from the skill definition. Count configurable via `-n`. You can provide comma-separated model IDs for fallback. |
 | **Judge models** | `--judge-model` | 3 free OpenRouter models (with fallback) | Evaluate each test model's response  - did it correctly trigger the skill? Did it follow instructions? You can provide comma-separated model IDs for fallback. |
 
-The generator and judge models always run through OpenRouter (even if you set a different `--provider`). Only the test models use your specified provider.
+When you specify custom `--generator-model` and `--judge-model`, they use the same provider as `--provider`. When omitted, they default to free OpenRouter models (which requires an `OPENROUTER_API_KEY` if your provider isn't OpenRouter).
 
 ### Providers
 

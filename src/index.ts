@@ -43,6 +43,7 @@ async function runSingleSkill(
   opts: {
     provider: ProviderName;
     apiKey: string;
+    internalProvider: ProviderName;
     internalApiKey: string;
     models: ModelWithId[];
     modelIds: string[];
@@ -56,13 +57,13 @@ async function runSingleSkill(
   siblingSkills?: SkillDefinition[],
 ): Promise<BatchSkillReport> {
   const {
-    provider, apiKey, internalApiKey, models, modelIds,
-    generatorModelIds, judgeModelIds, count, json, verbose,
+    internalProvider, internalApiKey, models, modelIds,
+    generatorModelIds, judgeModelIds, count, verbose,
   } = opts;
 
   // Generate test prompts
   process.stderr.write(chalk.cyan(`  Generating test prompts for "${skill.name}"...\n`));
-  const generatorModels = generatorModelIds.map(id => createModel('openrouter', id, internalApiKey));
+  const generatorModels = generatorModelIds.map(id => createModel(internalProvider, id, internalApiKey));
   const prompts = await generateTestPrompts(skill, generatorModels, count, opts.prompts, verbose);
   process.stderr.write(chalk.green(`  Generated ${prompts.length} test prompts\n\n`));
 
@@ -72,7 +73,7 @@ async function runSingleSkill(
 
   // Evaluate results
   process.stderr.write(chalk.cyan(`  Evaluating results for "${skill.name}"...\n`));
-  const judgeModels = judgeModelIds.map(id => createModel('openrouter', id, internalApiKey));
+  const judgeModels = judgeModelIds.map(id => createModel(internalProvider, id, internalApiKey));
   const evalResults = await evaluateResults(skill, testResults, judgeModels, models, verbose);
 
   // Compute report
@@ -147,19 +148,41 @@ program
         process.exit(1);
       }
 
-      // Resolve generator/judge keys (always OpenRouter for internal models)
+      // Generator and judge models use the same provider by default.
+      // If no explicit generator/judge models are given, fall back to free OpenRouter models
+      // (which requires an OpenRouter key even when using another provider for test models).
+      const hasCustomGenerator = Boolean(opts.generatorModel);
+      const hasCustomJudge = Boolean(opts.judgeModel);
+      const needsOpenRouterFallback = (!hasCustomGenerator || !hasCustomJudge) && provider !== 'openrouter';
+
+      let internalProvider: ProviderName;
       let internalApiKey: string;
-      try {
-        internalApiKey = resolveApiKey('openrouter', provider === 'openrouter' ? apiKey : undefined);
-      } catch {
-        if (!opts.prompts) {
-          console.error(chalk.red(
-            'OPENROUTER_API_KEY is required for test generation and evaluation (uses free models).\n' +
-            'Set OPENROUTER_API_KEY env var, or provide custom prompts with --prompts.',
-          ));
-          process.exit(1);
+
+      if (hasCustomGenerator && hasCustomJudge) {
+        // Both explicitly set — use the same provider and key as test models
+        internalProvider = provider;
+        internalApiKey = apiKey;
+      } else if (needsOpenRouterFallback) {
+        // No custom models, non-OpenRouter provider — try OpenRouter for free defaults
+        try {
+          internalApiKey = resolveApiKey('openrouter');
+          internalProvider = 'openrouter';
+        } catch {
+          if (!opts.prompts) {
+            console.error(chalk.red(
+              `No custom --generator-model or --judge-model specified.\n` +
+              `Either provide these flags with model IDs for your "${provider}" provider,\n` +
+              `or set OPENROUTER_API_KEY to use the default free OpenRouter models for generation and judging.`,
+            ));
+            process.exit(1);
+          }
+          internalProvider = provider;
+          internalApiKey = apiKey;
         }
-        internalApiKey = '';
+      } else {
+        // OpenRouter provider — use the same key
+        internalProvider = 'openrouter';
+        internalApiKey = apiKey;
       }
 
       const generatorModelIds = opts.generatorModel
@@ -181,6 +204,7 @@ program
       const commonOpts = {
         provider,
         apiKey,
+        internalProvider,
         internalApiKey,
         models,
         modelIds,
