@@ -6,19 +6,21 @@
 
 ## Architecture
 
-The pipeline runs in four stages: **Parse → Generate → Test → Evaluate**.
+The pipeline runs in four stages: **Parse → Generate → Test → Evaluate**. When given a folder, it adds **Scan** at the start and can optionally show a **Dependency Graph**.
 
 ```
 src/
 ├── index.ts            # CLI entrypoint (Commander.js), wires the pipeline
 ├── config.ts           # Types, interfaces, constants, default model lists
 ├── parser.ts           # Loads SKILL.md from local path, GitHub URL, or owner/repo shorthand
+├── scanner.ts          # Recursively discovers SKILL.md files in local folders or GitHub repos
+├── graph.ts            # Builds and renders a dependency graph between skills
 ├── providers.ts        # Factory for Vercel AI SDK LanguageModel instances (OpenRouter, Anthropic, OpenAI, Google)
-├── context-builder.ts  # Builds system prompts with skill XML injection and dummy distractor skills
+├── context-builder.ts  # Builds system prompts with skill XML injection and distractor skills
 ├── test-generator.ts   # Uses an LLM to generate 5 positive + 5 negative test prompts
 ├── runner.ts           # Sends test prompts to each target model and records responses
 ├── evaluator.ts        # LLM-as-judge: evaluates trigger accuracy and instruction compliance
-└── reporter.ts         # Renders results as a table or JSON
+└── reporter.ts         # Renders results as a table or JSON (single and batch modes)
 ```
 
 ## Three Model Roles
@@ -31,11 +33,14 @@ Generator and judge models support comma-separated fallbacks and retry with dela
 
 ## Pipeline Detail
 
+### 0. Scan (folder/repo mode)
+When the input is a local directory or GitHub tree URL, `scanner.ts` recursively discovers all SKILL.md files. Skips `node_modules`, `.git`, and `dist` directories. For GitHub repos, uses the Git Trees API with `recursive=1`. The CLI auto-detects whether the input is a file or directory.
+
 ### 1. Parse
 Reads the SKILL.md from a local path, GitHub URL, or `owner/repo` shorthand. Extracts the skill's `name`, `description`, and instruction body from YAML frontmatter and markdown content using `gray-matter`.
 
 ### 2. Build context
-Constructs the system prompt using `<available_skills>` XML injection — the same format agents use in production. The target skill is mixed in with 3 dummy distractor skills (git-commit-helper, api-documentation, test-generator) to test whether the model can identify the correct skill from a list.
+Constructs the system prompt using `<available_skills>` XML injection — the same format agents use in production. The target skill is mixed in with 3 dummy distractor skills (git-commit-helper, api-documentation, test-generator) to test whether the model can identify the correct skill from a list. In batch mode, the other real skills from the folder are also included as distractors alongside the dummy ones.
 
 ### 3. Generate test prompts
 A **generator model** creates 10 test prompts from the skill definition:
@@ -56,7 +61,15 @@ A **judge model** evaluates each response in two phases:
 Each evaluation item makes 1 API call (trigger judge only) for negative prompts, or up to 3 API calls (trigger judge + compliance run + compliance judge) for positive prompts that triggered correctly.
 
 ### 6. Report
-Prints a compatibility matrix with trigger accuracy, compliance scores, and an overall percentage per model.
+Prints a compatibility matrix with trigger accuracy, compliance scores, and an overall percentage per model. In batch mode, each skill gets its own table plus a combined summary with per-skill averages.
+
+### Dependency Graph (`--graph`)
+`graph.ts` builds and renders a dependency graph between skills. It detects references by scanning each skill's raw content for:
+- **Name mentions** — word-boundary regex match for other skill names
+- **Path references** — patterns like `skills/other-skill/` or `.claude/skills/other-skill/`
+- **Frontmatter fields** — skill names appearing after `dependencies:`, `requires:`, `uses:`, `depends_on:`, or `related:`
+
+The graph renders as a tree view with box-drawing characters, shows isolated/depended-on badges, and includes an adjacency matrix for complex graphs (>3 edges). Cycle detection uses DFS with coloring. The `--graph` flag requires no API key — it only needs the skill files.
 
 ## Scoring
 
@@ -89,7 +102,7 @@ npm run build    # TypeScript → dist/
 
 ## Conventions
 
-- No test framework yet — manual testing via `npm run dev`
+- Vitest for unit tests (`npm test`)
 - Free OpenRouter models (`:free` suffix) are used by default but are subject to rate limits
 - The `.env` file is gitignored and holds API keys locally
 - All stderr output is for progress/status; stdout is for results
