@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'skillab - Tools for AI Agent Skills',
-  description: 'Tools for working with AI Agent Skills (SKILL.md files)',
+  title: 'Alexander Zlatkov',
+  description: 'Playground for AI stuff',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -87,59 +87,64 @@ export const PROVIDER_MODELS: Record<ProviderName, {
 }> = {
   openrouter: {
     test: [
-      { id: 'google/gemini-2.0-flash-001', label: 'Gemini 2.0 Flash', category: 'test' },
-      { id: 'meta-llama/llama-3.3-70b-instruct', label: 'Llama 3.3 70B', category: 'test' },
-      { id: 'mistralai/mistral-small-3.1-24b-instruct', label: 'Mistral Small 3.1', category: 'test' },
-      { id: 'qwen/qwen-2.5-72b-instruct', label: 'Qwen 2.5 72B', category: 'test' },
-      { id: 'deepseek/deepseek-chat-v3-0324', label: 'DeepSeek V3', category: 'test' },
+      { id: 'anthropic/claude-sonnet-4', label: 'anthropic/claude-sonnet-4', category: 'test' },
+      { id: 'openai/gpt-4.1', label: 'openai/gpt-4.1', category: 'test' },
+      { id: 'openai/gpt-4o', label: 'openai/gpt-4o', category: 'test' },
+      { id: 'google/gemini-2.5-pro', label: 'google/gemini-2.5-pro', category: 'test' },
+      { id: 'google/gemini-2.5-flash', label: 'google/gemini-2.5-flash', category: 'test' },
+      { id: 'deepseek/deepseek-chat-v3-0324', label: 'deepseek/deepseek-chat-v3-0324', category: 'test' },
+      { id: 'meta-llama/llama-3.3-70b-instruct', label: 'meta-llama/llama-3.3-70b-instruct', category: 'test' },
+      { id: 'openai/gpt-4.1-mini', label: 'openai/gpt-4.1-mini', category: 'test' },
     ],
     generator: [
-      { id: 'google/gemini-2.0-flash-001', label: 'Gemini 2.0 Flash', category: 'generator' },
-      { id: 'deepseek/deepseek-chat-v3-0324', label: 'DeepSeek V3', category: 'generator' },
-      { id: 'meta-llama/llama-3.3-70b-instruct', label: 'Llama 3.3 70B', category: 'generator' },
+      { id: 'google/gemini-2.5-flash', label: 'google/gemini-2.5-flash', category: 'generator' },
+      { id: 'deepseek/deepseek-chat-v3-0324', label: 'deepseek/deepseek-chat-v3-0324', category: 'generator' },
+      { id: 'openai/gpt-4.1-mini', label: 'openai/gpt-4.1-mini', category: 'generator' },
     ],
     judge: [
-      { id: 'google/gemini-2.0-flash-001', label: 'Gemini 2.0 Flash', category: 'judge' },
-      { id: 'deepseek/deepseek-chat-v3-0324', label: 'DeepSeek V3', category: 'judge' },
-      { id: 'meta-llama/llama-3.3-70b-instruct', label: 'Llama 3.3 70B', category: 'judge' },
+      { id: 'google/gemini-2.5-flash', label: 'google/gemini-2.5-flash', category: 'judge' },
+      { id: 'deepseek/deepseek-chat-v3-0324', label: 'deepseek/deepseek-chat-v3-0324', category: 'judge' },
+      { id: 'openai/gpt-4.1-mini', label: 'openai/gpt-4.1-mini', category: 'judge' },
     ],
   },
   anthropic: {
     test: [
-      { id: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4', category: 'test' },
-      { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5', category: 'test' },
+      { id: 'claude-opus-4-7', label: 'claude-opus-4-7', category: 'test' },
+      { id: 'claude-sonnet-4-6', label: 'claude-sonnet-4-6', category: 'test' },
+      { id: 'claude-haiku-4-5-20251001', label: 'claude-haiku-4-5-20251001', category: 'test' },
     ],
     generator: [
-      { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5', category: 'generator' },
+      { id: 'claude-haiku-4-5-20251001', label: 'claude-haiku-4-5-20251001', category: 'generator' },
     ],
     judge: [
-      { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5', category: 'judge' },
+      { id: 'claude-haiku-4-5-20251001', label: 'claude-haiku-4-5-20251001', category: 'judge' },
     ],
   },
   openai: {
     test: [
-      { id: 'gpt-4o', label: 'GPT-4o', category: 'test' },
-      { id: 'gpt-4o-mini', label: 'GPT-4o Mini', category: 'test' },
-      { id: 'gpt-4.1-mini', label: 'GPT-4.1 Mini', category: 'test' },
+      { id: 'gpt-4.1', label: 'gpt-4.1', category: 'test' },
+      { id: 'gpt-4o', label: 'gpt-4o', category: 'test' },
+      { id: 'gpt-4.1-mini', label: 'gpt-4.1-mini', category: 'test' },
+      { id: 'gpt-4o-mini', label: 'gpt-4o-mini', category: 'test' },
     ],
     generator: [
-      { id: 'gpt-4o-mini', label: 'GPT-4o Mini', category: 'generator' },
+      { id: 'gpt-4.1-mini', label: 'gpt-4.1-mini', category: 'generator' },
     ],
     judge: [
-      { id: 'gpt-4o-mini', label: 'GPT-4o Mini', category: 'judge' },
+      { id: 'gpt-4.1-mini', label: 'gpt-4.1-mini', category: 'judge' },
     ],
   },
   google: {
     test: [
-      { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash', category: 'test' },
-      { id: 'gemini-2.5-flash-preview-05-20', label: 'Gemini 2.5 Flash', category: 'test' },
-      { id: 'gemini-2.5-pro-preview-05-06', label: 'Gemini 2.5 Pro', category: 'test' },
+      { id: 'gemini-2.5-pro', label: 'gemini-2.5-pro', category: 'test' },
+      { id: 'gemini-2.5-flash', label: 'gemini-2.5-flash', category: 'test' },
+      { id: 'gemini-2.0-flash-001', label: 'gemini-2.0-flash-001', category: 'test' },
     ],
     generator: [
-      { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash', category: 'generator' },
+      { id: 'gemini-2.5-flash', label: 'gemini-2.5-flash', category: 'generator' },
     ],
     judge: [
-      { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash', category: 'judge' },
+      { id: 'gemini-2.5-flash', label: 'gemini-2.5-flash', category: 'judge' },
     ],
   },
   azure: {
