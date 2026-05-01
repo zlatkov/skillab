@@ -2,107 +2,111 @@
 
 ## Project Overview
 
-`skilleval` is a CLI tool that evaluates how well AI models understand and follow Agent Skills (SKILL.md files). It simulates how AI agents inject skills into prompts, then tests whether various LLM models correctly trigger and follow the skill's instructions. The test model is presented as a helpful AI agent (not a coding-specific agent) with access to multiple skills.
+`skillab` is a Next.js web app that provides tools for working with Agent Skills (SKILL.md files). It runs as a browser-first application — all orchestration logic executes client-side, with a single thin API route (`/api/generate`) that proxies LLM calls to avoid CORS restrictions.
 
 ## Architecture
 
-The pipeline runs in four stages: **Parse → Generate → Test → Evaluate**. When given a folder, it adds **Scan** at the start and can optionally show a **Dependency Graph**.
+```
+app/
+├── page.tsx              # Main UI: skill input, tool selector, config, results
+├── layout.tsx            # Root layout with metadata
+├── globals.css           # Dark theme, amber accent, custom scrollbar
+└── api/
+    └── generate/
+        └── route.ts      # Thin LLM proxy — creates provider models, calls generateText
 
+lib/
+├── types.ts              # Shared types, provider model presets, constants
+├── skill.ts              # Skill parser, GitHub fetcher, context builder, dependency graph
+└── engine.ts             # Client-side evaluation pipeline with progress callbacks
 ```
-src/
-├── index.ts            # CLI entrypoint (Commander.js), wires the pipeline
-├── config.ts           # Types, interfaces, constants, default model lists
-├── parser.ts           # Loads SKILL.md from local path, GitHub URL, or owner/repo shorthand
-├── scanner.ts          # Recursively discovers SKILL.md files in local folders or GitHub repos
-├── graph.ts            # Builds and renders a dependency graph between skills
-├── providers.ts        # Factory for Vercel AI SDK LanguageModel instances (OpenRouter, Anthropic, OpenAI, Google)
-├── context-builder.ts  # Builds system prompts with skill XML injection and distractor skills
-├── test-generator.ts   # Uses an LLM to generate 5 positive + 5 negative test prompts
-├── runner.ts           # Sends test prompts to each target model and records responses
-├── evaluator.ts        # LLM-as-judge: evaluates trigger accuracy and instruction compliance
-└── reporter.ts         # Renders results as a table or JSON (single and batch modes)
-```
+
+## Key Design Decisions
+
+- **Browser-first**: Parsing, context building, eval orchestration, and graph building all run in the browser. The API route only exists because LLM providers don't support CORS.
+- **No CLI**: Previously a CLI tool, now purely a web app. No `bin`, no npm publishing.
+- **Browser-compatible frontmatter parser**: Replaces `gray-matter` (which requires Node.js `fs`) with a custom parser that handles YAML block scalars (`>` and `|`).
+- **GitHub API for repo scanning**: Uses the Git Trees API with `recursive=1` to find SKILL.md files. Runs client-side since GitHub API supports CORS.
 
 ## Three Model Roles
 
-1. **Generator models** — generate test prompts from the skill definition. Use the same provider as test models when custom models are specified via `--generator-model`, otherwise default to free OpenRouter models.
-2. **Test models** — the models being evaluated. Use the provider specified by `--provider`.
-3. **Judge models** — evaluate test model responses. Use the same provider as test models when custom models are specified via `--judge-model`, otherwise default to free OpenRouter models.
+1. **Test models** — the models being evaluated. Receive the skill-injected prompt and are scored.
+2. **Generator models** — generate test prompts from the skill definition. Configurable in Advanced Options.
+3. **Judge models** — evaluate test model responses for trigger accuracy and compliance.
 
-Generator and judge models support comma-separated fallbacks and retry with delay.
+All three use the same provider. Each provider has preset defaults. Generator and judge models support fallback chains with retry.
 
-## Pipeline Detail
+## Tools
 
-### 0. Scan (folder/repo mode)
-When the input is a local directory or GitHub tree URL, `scanner.ts` recursively discovers all SKILL.md files. Skips `node_modules`, `.git`, and `dist` directories. For GitHub repos, uses the Git Trees API with `recursive=1`. The CLI auto-detects whether the input is a file or directory.
+### Skill Evaluator
 
-### 1. Parse
-Reads the SKILL.md from a local path, GitHub URL, or `owner/repo` shorthand. Extracts the skill's `name`, `description`, and instruction body from YAML frontmatter and markdown content using `gray-matter`.
+The evaluation pipeline runs in six stages: **Parse → Build Context → Generate Prompts → Test → Evaluate → Report**.
 
-### 2. Build context
-Constructs the system prompt using `<available_skills>` XML injection — the same format agents use in production. The target skill is mixed in with 3 dummy distractor skills (git-commit-helper, api-documentation, test-generator) to test whether the model can identify the correct skill from a list. In batch mode, the other real skills from the folder are also included as distractors alongside the dummy ones.
+#### Parse
+`lib/skill.ts` — `parseSkillContent()` extracts name, description, and body from SKILL.md content. Uses a custom `parseFrontmatter()` that handles YAML block scalars. Falls back to first heading for name, first paragraph for description.
 
-### 3. Generate test prompts
-A **generator model** creates 10 test prompts from the skill definition:
-- 5 **positive** prompts — realistic user requests that should trigger the skill
-- 5 **negative** prompts — related but out-of-scope requests that should not trigger it
+#### Build Context
+`lib/skill.ts` — `buildTriggerSystemPrompt()` and `buildComplianceSystemPrompt()`. The trigger prompt mixes the target skill with 3 dummy distractors (git-commit-helper, api-documentation, test-generator) plus any sibling skills from a batch. The compliance prompt includes full skill instructions.
 
-Falls back to hardcoded generic prompts if generation fails. Custom prompts can be provided via `--prompts`.
+#### Generate Test Prompts
+`lib/engine.ts` — A generator model creates N positive + N negative test prompts. Falls back through the generator model list on failure with retry. Falls back to hardcoded generic prompts if all generators fail.
 
-### 4. Run trigger tests
-Each test prompt is sent to each **test model** with the skill-injected system prompt. The model's response and latency are recorded.
+#### Run Trigger Tests
+Each prompt is sent to each test model with the skill-injected system prompt via `/api/generate`.
 
-### 5. Evaluate
-A **judge model** evaluates each response in two phases:
+#### Evaluate
+A judge model evaluates each response:
+- **Trigger judgment** — `{triggered, correct, reason}`
+- **Compliance judgment** (positive prompts that triggered correctly) — The test model is re-prompted with full instructions. If the skill references tools (WebFetch, BraveSearch, WebSearch, Read, Write, Edit, Bash, Grep, Glob), mock tool definitions are provided so the model can make structured tool calls. The judge scores `{compliant, score (0-100), reason}`.
 
-- **Trigger judgment** — Did the model correctly trigger the skill (for positive prompts) or correctly ignore it (for negative prompts)? The judge outputs `{triggered, correct, reason}`.
-- **Compliance judgment** (positive prompts only, when triggered) — The test model is re-prompted with the full skill instructions. If the skill references known tools (WebFetch, BraveSearch, WebSearch, Read, Write, Edit, Bash, Grep, Glob, etc.), mock tool definitions are provided via the API `tools` parameter so the model can make real structured tool calls. The tools return placeholder results — the judge evaluates whether the model called the right tools with reasonable parameters and followed the correct workflow, not the quality of returned data. This involves two extra API calls: one to the test model for a compliance response, and one to the judge to score it. The judge outputs `{compliant, score (0-100), reason}`. Tool names are matched using aliases (e.g. "Brave Search" matches `BraveSearch`).
+Each eval item makes 1 API call for negative prompts, or up to 3 for positive prompts (trigger judge + compliance run + compliance judge).
 
-Each evaluation item makes 1 API call (trigger judge only) for negative prompts, or up to 3 API calls (trigger judge + compliance run + compliance judge) for positive prompts that triggered correctly.
+#### Report
+Results displayed in a table per skill. Batch mode adds a combined summary with per-skill averages. JSON export available.
 
-### 6. Report
-Prints a compatibility matrix with trigger accuracy, compliance scores, and an overall percentage per model. In batch mode, each skill gets its own table plus a combined summary with per-skill averages.
+### Dependency Graph
 
-### Dependency Graph (`--graph`)
-`graph.ts` builds and renders a dependency graph between skills. It detects references by scanning each skill's raw content for:
+`lib/skill.ts` — `buildDependencyGraph()` builds a graph between skills by scanning each skill's raw content for:
 - **Name mentions** — word-boundary regex match for other skill names
-- **Path references** — patterns like `skills/other-skill/` or `.claude/skills/other-skill/`
-- **Frontmatter fields** — skill names appearing after `dependencies:`, `requires:`, `uses:`, `depends_on:`, or `related:`
+- **Path references** — patterns like `skills/other-skill/`
+- **Frontmatter fields** — skill names after `dependencies:`, `requires:`, `uses:`, `depends_on:`, or `related:`
 
-The graph renders as a tree view with box-drawing characters, shows isolated/depended-on badges, and includes an adjacency matrix for complex graphs (>3 edges). Cycle detection uses DFS with coloring. The `--graph` flag requires no API key — it only needs the skill files.
+Renders as a tree view with box-drawing characters plus an adjacency matrix. No API key required.
+
+## API Route
+
+`app/api/generate/route.ts` — Thin proxy that:
+1. Creates a provider-specific model instance (OpenRouter, OpenAI, Anthropic, Google, Azure)
+2. Calls `generateText()` from the Vercel AI SDK
+3. Returns `{text, toolCalls, steps}`
+4. Includes mock tool definitions when `useMockTools: true`
+5. Enhanced error handling extracts underlying provider errors from AI SDK error wrappers
 
 ## Scoring
 
 - **Overall score**: `trigger_accuracy × 50 + compliance_accuracy × 30 + avg_compliance_score/100 × 20`
-- Exit code is `0` if all models score >= 50%, `1` otherwise (useful for CI).
+- Trigger accuracy: correct triggers and correct non-triggers out of total prompts
+- Compliance: only measured on positive prompts that correctly triggered
+
+## Tech Stack
+
+- Next.js 15 (App Router), React 19, TypeScript
+- Tailwind CSS v4 (dark theme, amber accent `#f59e0b`)
+- Vercel AI SDK (`ai`, `@ai-sdk/openai`, `@ai-sdk/anthropic`, `@ai-sdk/google`, `@ai-sdk/azure`)
+- Zod (schema validation for mock tools)
 
 ## Development
 
 ```bash
 npm install
-npm run dev -- ./path/to/SKILL.md --verbose
+npm run dev
 ```
 
-Requires `OPENROUTER_API_KEY` in environment or `.env` file. The project uses `dotenv` for local env loading.
-
-## Build
-
-```bash
-npm run build    # TypeScript → dist/
-```
-
-## Tech Stack
-
-- TypeScript (ESM)
-- Vercel AI SDK (`ai`, `@ai-sdk/openai`, `@ai-sdk/anthropic`, `@ai-sdk/google`, `@ai-sdk/azure`)
-- Commander.js (CLI)
-- gray-matter (SKILL.md frontmatter parsing)
-- chalk (terminal colors)
-- dotenv (env loading)
+No environment variables needed for development — API keys are entered in the UI and sent per-request.
 
 ## Conventions
 
-- Vitest for unit tests (`npm test`)
-- Free OpenRouter models (`:free` suffix) are used by default but are subject to rate limits
-- The `.env` file is gitignored and holds API keys locally
-- All stderr output is for progress/status; stdout is for results
+- All client-side code in `lib/` — no Node.js-specific APIs
+- Provider model presets defined in `lib/types.ts` (`PROVIDER_MODELS`)
+- Single `page.tsx` with sub-components (ModelPicker, GraphView, ResultsTable, etc.)
+- Progress callbacks via `LogEntry` type for real-time UI updates during evaluation
