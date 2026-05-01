@@ -1,6 +1,10 @@
 node_modules/
-dist/
+.next/
+out/
 .env
+.env.local
+*.tsbuildinfo
+next-env.d.ts
 *.tgz
 .DS_Store
 Thumbs.db
