@@ -8,54 +8,26 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export const maxDuration = 60;
 
-const MOCK_TOOLS: Record<string, { description: string; parameters: z.ZodObject<z.ZodRawShape> }> = {
-  WebFetch: {
-    description: 'Fetch content from a URL',
-    parameters: z.object({ url: z.string().describe('The URL to fetch') }),
-  },
-  WebSearch: {
-    description: 'Search the web for information',
-    parameters: z.object({ query: z.string().describe('The search query') }),
-  },
-  BraveSearch: {
-    description: 'Search the web using Brave Search',
-    parameters: z.object({ query: z.string().describe('The search query') }),
-  },
-  Read: {
-    description: 'Read a file from the filesystem',
-    parameters: z.object({ file_path: z.string().describe('The file path to read') }),
-  },
-  Write: {
-    description: 'Write content to a file',
-    parameters: z.object({
-      file_path: z.string().describe('The file path to write'),
-      content: z.string().describe('The content to write'),
-    }),
-  },
-  Edit: {
-    description: 'Edit a file by replacing text',
-    parameters: z.object({
-      file_path: z.string().describe('The file path to edit'),
-      old_string: z.string().describe('The text to replace'),
-      new_string: z.string().describe('The replacement text'),
-    }),
-  },
-  Bash: {
-    description: 'Execute a shell command',
-    parameters: z.object({ command: z.string().describe('The command to execute') }),
-  },
-  Grep: {
-    description: 'Search file contents using regex',
-    parameters: z.object({
-      pattern: z.string().describe('The regex pattern to search for'),
-      path: z.string().optional().describe('The directory to search in'),
-    }),
-  },
-  Glob: {
-    description: 'Find files matching a pattern',
-    parameters: z.object({ pattern: z.string().describe('The glob pattern') }),
-  },
+const TOOL_DESCRIPTIONS: Record<string, string> = {
+  WebFetch: 'Fetch content from a URL',
+  WebSearch: 'Search the web for information',
+  BraveSearch: 'Search the web using Brave Search',
+  Read: 'Read a file from the filesystem',
+  Write: 'Write content to a file',
+  Edit: 'Edit a file by replacing text',
+  Bash: 'Execute a shell command',
+  Grep: 'Search file contents using regex',
+  Glob: 'Find files matching a pattern',
+  ListFiles: 'List files in a directory',
+  TodoRead: 'Read the current to-do list',
+  TodoWrite: 'Write or update the to-do list',
+  NotebookEdit: 'Edit a Jupyter notebook cell',
+  Agent: 'Delegate a task to a sub-agent',
 };
+
+const genericParams = z.object({
+  input: z.string().describe('The primary input for this tool'),
+});
 
 function createModel(
   provider: string,
@@ -95,13 +67,13 @@ function createModel(
   }
 }
 
-function buildMockTools() {
+function buildMockTools(toolNames: string[]) {
   return Object.fromEntries(
-    Object.entries(MOCK_TOOLS).map(([name, def]) => [
+    toolNames.map(name => [
       name,
       tool({
-        description: def.description,
-        parameters: def.parameters,
+        description: TOOL_DESCRIPTIONS[name] || `Execute the ${name} tool`,
+        parameters: genericParams,
         execute: async () => `[Mock result from ${name}]`,
       }),
     ]),
@@ -120,6 +92,7 @@ export async function POST(request: NextRequest) {
       prompt,
       temperature = 0.3,
       useMockTools = false,
+      mockToolNames = [] as string[],
       maxSteps = 1,
       azureResourceName,
     } = body;
@@ -144,8 +117,8 @@ export async function POST(request: NextRequest) {
     if (prompt) {
       (options as Record<string, unknown>).prompt = prompt;
     }
-    if (useMockTools) {
-      options.tools = buildMockTools();
+    if (useMockTools && mockToolNames.length > 0) {
+      options.tools = buildMockTools(mockToolNames);
       options.maxSteps = maxSteps;
     }
 

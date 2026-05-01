@@ -16,6 +16,8 @@ import type {
 import {
   PROVIDER_NAMES,
   PROVIDER_MODELS,
+  KNOWN_TOOLS,
+  detectToolsInSkill,
   getDefaultModels,
 } from '@/lib/types';
 import { parseSkillContent, buildDependencyGraph, fetchSkillsFromGitHub } from '@/lib/skill';
@@ -58,6 +60,7 @@ export default function Home() {
   const [graphBuilt, setGraphBuilt] = useState(false);
   const [isFetchingGithub, setIsFetchingGithub] = useState(false);
   const [githubStatus, setGithubStatus] = useState('');
+  const [pendingSwitch, setPendingSwitch] = useState<ActionMode | null>(null);
 
 
   // Config state
@@ -70,6 +73,10 @@ export default function Home() {
   const [count, setCount] = useState(5);
   const [verbose, setVerbose] = useState(true);
   const [azureResourceName, setAzureResourceName] = useState('');
+
+  // Tools
+  const [enabledTools, setEnabledTools] = useState<string[]>([...KNOWN_TOOLS]);
+  const [customToolInput, setCustomToolInput] = useState('');
 
   // Custom prompts
   const [customPromptsInput, setCustomPromptsInput] = useState('');
@@ -97,6 +104,15 @@ export default function Home() {
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
+
+  // Auto-detect tools when selected skill changes
+  useEffect(() => {
+    if (skills.length > 0) {
+      const skill = skills[selectedSkillIndex] || skills[0];
+      const detected = detectToolsInSkill(skill.body);
+      setEnabledTools(detected.length > 0 ? detected : [...KNOWN_TOOLS]);
+    }
+  }, [skills, selectedSkillIndex]);
 
   // Parse skill content whenever it changes
   const handleParseSkills = useCallback(() => {
@@ -254,6 +270,7 @@ export default function Home() {
       count,
       verbose,
       azureResourceName: azureResourceName || undefined,
+      enabledTools,
     };
 
     // Parse custom prompts if provided
@@ -294,10 +311,127 @@ export default function Home() {
     setStatus('idle');
   };
 
+  const switchTo = (mode: ActionMode) => {
+    if (mode === 'evaluate') {
+      setGraph(null); setGraphBuilt(false); setGraphProgress('');
+    } else {
+      setResults([]); setLogs([]); setStatus('idle');
+    }
+    setActionMode(mode);
+  };
+
+  const handleSwitchTool = (mode: ActionMode) => {
+    if (mode === actionMode) return;
+    if (status === 'running' || isBuildingGraph) {
+      setPendingSwitch(mode);
+    } else {
+      switchTo(mode);
+    }
+  };
+
+  const confirmSwitch = () => {
+    if (!pendingSwitch) return;
+    abortRef.current = true;
+    setStatus('idle');
+    setIsBuildingGraph(false);
+    switchTo(pendingSwitch);
+    setPendingSwitch(null);
+  };
+
+  const cancelSwitch = () => {
+    setPendingSwitch(null);
+  };
+
+  // Scroll-spy: track which section is currently in view
+  const [activeSection, setActiveSection] = useState('skill-input');
+  const hashLockRef = useRef(false);
+
+  useEffect(() => {
+    const ids = ['skill-input', 'tool', 'results'];
+    const visibleIds = new Set<string>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (hashLockRef.current) return;
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            visibleIds.add(entry.target.id);
+          } else {
+            visibleIds.delete(entry.target.id);
+          }
+        }
+        for (const id of ids) {
+          if (visibleIds.has(id)) {
+            setActiveSection(id);
+            break;
+          }
+        }
+      },
+      { rootMargin: '-10% 0px -80% 0px', threshold: 0 },
+    );
+    for (const id of ids) {
+      const el = document.getElementById(id);
+      if (el) observer.observe(el);
+    }
+
+    const onHash = () => {
+      const hash = window.location.hash.slice(1);
+      if (hash && ids.includes(hash)) {
+        setActiveSection(hash);
+        hashLockRef.current = true;
+        setTimeout(() => { hashLockRef.current = false; }, 1000);
+      }
+    };
+    window.addEventListener('hashchange', onHash);
+    onHash();
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('hashchange', onHash);
+    };
+  }, [graph, results, logs, actionMode]);
+
+  const hasResults = (actionMode === 'graph' && graph) || (actionMode === 'evaluate' && (results.length > 0 || logs.length > 0));
+
+  const navItems = [
+    { id: 'skill-input', label: 'Skill Input', badge: skills.length > 0 ? `(${skills.length})` : undefined },
+    { id: 'tool', label: 'Tool' },
+    ...(hasResults ? [{ id: 'results', label: 'Results' }] : []),
+  ];
+
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8">
-      {/* Header */}
-      <header className="mb-8">
+    <div className="max-w-6xl mx-auto px-4 py-8 flex gap-8">
+      {/* Left sidebar nav */}
+      <nav className="hidden md:block w-36 shrink-0">
+        <div className="sticky top-8">
+          <Link href="/" className="text-xs text-text-dim hover:text-accent transition-colors">&larr; Home</Link>
+          <div className="mt-3 mb-4">
+            <span className="text-lg font-bold text-accent">skillab</span>
+            <span className="text-text-dim text-xs ml-1.5">v0.3.0</span>
+          </div>
+          <ul className="space-y-2 text-xs">
+            {navItems.map(item => (
+              <li key={item.id}>
+                <a
+                  href={`#${item.id}`}
+                  className={`transition-colors ${
+                    activeSection === item.id
+                      ? 'text-accent font-bold'
+                      : 'text-text-dim hover:text-accent'
+                  }`}
+                >
+                  {item.label}
+                  {item.badge && <span className="ml-1 text-success">{item.badge}</span>}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </nav>
+
+      {/* Main content */}
+      <div className="flex-1 min-w-0">
+      {/* Mobile header */}
+      <header className="mb-8 md:hidden">
         <Link href="/" className="text-xs text-text-dim hover:text-accent transition-colors">&larr; Home</Link>
         <div className="flex items-baseline gap-3 mt-2">
           <h1 className="text-2xl font-bold text-accent">skillab</h1>
@@ -309,7 +443,7 @@ export default function Home() {
       </header>
 
       {/* Skill Input Section */}
-      <section className="mb-6 border border-border rounded-lg p-4 bg-bg-secondary">
+      <section id="skill-input" className="mb-6 border border-border rounded-lg p-4 bg-bg-secondary scroll-mt-8">
         <h2 className="text-sm font-bold text-text-dim uppercase tracking-wider mb-1">Skill Input</h2>
         <p className="text-xs text-text-dim mb-3">
           Load one or more SKILL.md files — from a GitHub repo, a folder of skills, or paste directly
@@ -461,11 +595,11 @@ export default function Home() {
       </section>
 
       {/* Action Mode */}
-      <section className="mb-6 border border-border rounded-lg p-4 bg-bg-secondary">
+      <section id="tool" className="mb-6 border border-border rounded-lg p-4 bg-bg-secondary scroll-mt-8">
         <h2 className="text-sm font-bold text-text-dim uppercase tracking-wider mb-3">Tool</h2>
         <div className="flex gap-2 mb-4">
           <button
-            onClick={() => { setActionMode('evaluate'); setGraph(null); setGraphBuilt(false); setGraphProgress(''); }}
+            onClick={() => handleSwitchTool('evaluate')}
             className={`px-4 py-2 text-sm rounded border transition-colors ${
               actionMode === 'evaluate'
                 ? 'bg-accent/20 border-accent/50 text-accent'
@@ -475,7 +609,7 @@ export default function Home() {
             Skill Evaluator
           </button>
           <button
-            onClick={() => { setActionMode('graph'); setResults([]); setLogs([]); setStatus('idle'); }}
+            onClick={() => handleSwitchTool('graph')}
             className={`px-4 py-2 text-sm rounded border transition-colors ${
               actionMode === 'graph'
                 ? 'bg-accent/20 border-accent/50 text-accent'
@@ -485,11 +619,32 @@ export default function Home() {
             Dependency Graph
           </button>
         </div>
-        <p className="text-xs text-text-dim mb-4">
+        <p className="text-xs text-text-dim">
           {actionMode === 'evaluate'
             ? 'Test how well models trigger and follow the skill instructions'
             : 'Visualise how skills reference each other (no API key needed, requires 2+ skills)'}
         </p>
+
+        {actionMode === 'graph' && (
+          <div className="mt-4 flex gap-3">
+            <button
+              onClick={handleBuildGraph}
+              disabled={skills.length < 2 || isBuildingGraph}
+              className={`px-6 py-2.5 font-bold rounded text-sm transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed ${
+                graphBuilt
+                  ? 'bg-success text-black'
+                  : 'bg-accent text-black hover:bg-accent/90'
+              }`}
+            >
+              {isBuildingGraph ? (
+                <span className="flex items-center gap-2">
+                  <span className="inline-block w-3 h-3 border-2 border-black/30 border-t-black rounded-full animate-spin" />
+                  <span className="loading-text">{graphProgress}</span>
+                </span>
+              ) : graphBuilt ? '✓ Graph Built' : 'Build Graph'}
+            </button>
+          </div>
+        )}
 
         {actionMode === 'evaluate' && (
           <>
@@ -601,6 +756,7 @@ export default function Home() {
                   {' | '}Judge: {selectedJudgeModels.length > 0
                     ? (() => { const opt = PROVIDER_MODELS[provider].judge.find(o => o.id === selectedJudgeModels[0]); return opt ? opt.label : selectedJudgeModels[0]; })()
                     : 'none'}
+                  {' | '}Tools: {enabledTools.length}
                 </span>
               </summary>
               <div className="p-3 space-y-4">
@@ -624,6 +780,111 @@ export default function Home() {
                   defaultIds={getDefaultModels(provider).judge}
                   singleSelect
                 />
+                {/* Mock Tools */}
+                <div>
+                  <label className="block text-xs text-text-dim mb-1">Available Tools</label>
+                  <p className="text-xs text-text-dim/60 mb-2">
+                    Tools provided to the model during compliance testing. Auto-detected from the skill content. The model can make structured tool calls against these (with mock responses).
+                  </p>
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {KNOWN_TOOLS.map(tool => (
+                      <button
+                        key={tool}
+                        onClick={() =>
+                          setEnabledTools(prev =>
+                            prev.includes(tool)
+                              ? prev.filter(t => t !== tool)
+                              : [...prev, tool],
+                          )
+                        }
+                        className={`px-2.5 py-1 text-xs rounded border transition-colors cursor-pointer ${
+                          enabledTools.includes(tool)
+                            ? 'bg-accent/20 border-accent/50 text-accent'
+                            : 'bg-bg-tertiary border-border text-text-dim hover:border-accent/30 hover:text-text'
+                        }`}
+                      >
+                        {tool}
+                      </button>
+                    ))}
+                  </div>
+                  {/* Custom tools already added */}
+                  {enabledTools.filter(t => !KNOWN_TOOLS.includes(t as typeof KNOWN_TOOLS[number])).length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {enabledTools.filter(t => !KNOWN_TOOLS.includes(t as typeof KNOWN_TOOLS[number])).map(tool => (
+                        <button
+                          key={tool}
+                          onClick={() => setEnabledTools(prev => prev.filter(t => t !== tool))}
+                          className="px-2.5 py-1 text-xs rounded border bg-accent/20 border-accent/50 text-accent cursor-pointer"
+                        >
+                          {tool} <span className="opacity-60">&times;</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex gap-2 mb-2">
+                    <input
+                      value={customToolInput}
+                      onChange={e => setCustomToolInput(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          const name = customToolInput.trim();
+                          if (name && !enabledTools.includes(name)) {
+                            setEnabledTools(prev => [...prev, name]);
+                          }
+                          setCustomToolInput('');
+                        }
+                      }}
+                      placeholder="Add custom tool name..."
+                      className="flex-1 bg-bg-tertiary border border-border rounded px-2.5 py-1 text-xs font-mono"
+                    />
+                    <button
+                      onClick={() => {
+                        const name = customToolInput.trim();
+                        if (name && !enabledTools.includes(name)) {
+                          setEnabledTools(prev => [...prev, name]);
+                        }
+                        setCustomToolInput('');
+                      }}
+                      disabled={!customToolInput.trim()}
+                      className="px-3 py-1 text-xs bg-bg-tertiary border border-border rounded hover:border-border-hover transition-colors disabled:opacity-30"
+                    >
+                      Add
+                    </button>
+                  </div>
+                  <div className="flex gap-3 text-xs">
+                    <button
+                      onClick={() => setEnabledTools([...KNOWN_TOOLS])}
+                      className="text-text-dim hover:text-accent transition-colors cursor-pointer"
+                    >
+                      Select all
+                    </button>
+                    <button
+                      onClick={() => setEnabledTools([])}
+                      className="text-text-dim hover:text-accent transition-colors cursor-pointer"
+                    >
+                      Clear all
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (skills.length > 0) {
+                          const skill = skills[selectedSkillIndex] || skills[0];
+                          setEnabledTools(detectToolsInSkill(skill.body));
+                        }
+                      }}
+                      disabled={skills.length === 0}
+                      className="text-text-dim hover:text-accent transition-colors cursor-pointer disabled:opacity-30"
+                    >
+                      Auto-detect
+                    </button>
+                  </div>
+                  {enabledTools.length > 0 && (
+                    <p className="text-xs text-text-dim/50 mt-1.5">
+                      {enabledTools.length} tool{enabledTools.length !== 1 ? 's' : ''} enabled
+                    </p>
+                  )}
+                </div>
+
                 <div>
                   <label className="block text-xs text-text-dim mb-1">
                     Custom Test Prompts
@@ -640,58 +901,38 @@ export default function Home() {
                 </div>
               </div>
             </details>
+
+          <div className="mt-4 flex gap-3">
+            <button
+              onClick={handleRun}
+              disabled={skills.length === 0 || !apiKey || status === 'running'}
+              className="px-6 py-2.5 bg-accent text-black font-bold rounded text-sm hover:bg-accent/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {status === 'running' ? (
+                <span className="flex items-center gap-2">
+                  <span className="inline-block w-3 h-3 border-2 border-black/30 border-t-black rounded-full animate-spin" />
+                  <span className="loading-text">Running...</span>
+                </span>
+              ) : (
+                'Run Evaluation'
+              )}
+            </button>
+            {status === 'running' && (
+              <button
+                onClick={handleStop}
+                className="px-4 py-2.5 bg-error/20 text-error border border-error/30 rounded text-sm hover:bg-error/30 transition-colors"
+              >
+                Stop
+              </button>
+            )}
+          </div>
           </>
         )}
       </section>
 
-      {/* Action Button */}
-      <div className="mb-6 flex gap-3">
-        {actionMode === 'evaluate' ? (
-          <button
-            onClick={handleRun}
-            disabled={skills.length === 0 || !apiKey || status === 'running'}
-            className="px-6 py-2.5 bg-accent text-black font-bold rounded text-sm hover:bg-accent/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {status === 'running' ? (
-              <span className="flex items-center gap-2">
-                <span className="inline-block w-3 h-3 border-2 border-black/30 border-t-black rounded-full animate-spin" />
-                <span className="loading-text">Running...</span>
-              </span>
-            ) : (
-              'Run Evaluation'
-            )}
-          </button>
-        ) : (
-          <button
-            onClick={handleBuildGraph}
-            disabled={skills.length < 2 || isBuildingGraph}
-            className={`px-6 py-2.5 font-bold rounded text-sm transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed ${
-              graphBuilt
-                ? 'bg-success text-black'
-                : 'bg-accent text-black hover:bg-accent/90'
-            }`}
-          >
-            {isBuildingGraph ? (
-              <span className="flex items-center gap-2">
-                <span className="inline-block w-3 h-3 border-2 border-black/30 border-t-black rounded-full animate-spin" />
-                <span className="loading-text">{graphProgress}</span>
-              </span>
-            ) : graphBuilt ? '✓ Graph Built' : 'Build Graph'}
-          </button>
-        )}
-        {status === 'running' && (
-          <button
-            onClick={handleStop}
-            className="px-4 py-2.5 bg-error/20 text-error border border-error/30 rounded text-sm hover:bg-error/30 transition-colors"
-          >
-            Stop
-          </button>
-        )}
-      </div>
-
       {/* Dependency Graph */}
       {actionMode === 'graph' && graph && (
-        <section className="mb-6 border border-border rounded-lg p-4 bg-bg-secondary">
+        <section id="results" className="mb-6 border border-border rounded-lg p-4 bg-bg-secondary scroll-mt-8">
           <h2 className="text-sm font-bold text-text-dim uppercase tracking-wider mb-3">Dependency Graph</h2>
           <GraphView graph={graph} />
         </section>
@@ -699,7 +940,7 @@ export default function Home() {
 
       {/* Progress Log */}
       {actionMode === 'evaluate' && logs.length > 0 && (
-        <section className="mb-6 border border-border rounded-lg bg-bg-secondary overflow-hidden">
+        <section id="results" className="mb-6 border border-border rounded-lg bg-bg-secondary overflow-hidden scroll-mt-8">
           <div className="px-4 py-2 border-b border-border flex items-center justify-between">
             <h2 className="text-sm font-bold text-text-dim uppercase tracking-wider">Output</h2>
             <span className="text-xs text-text-dim">{logs.length} entries</span>
@@ -747,6 +988,34 @@ export default function Home() {
           </details>
         </section>
       )}
+
+      {/* Switch tool confirmation modal */}
+      {pendingSwitch && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="bg-bg-secondary border border-border rounded-lg p-6 max-w-sm mx-4 shadow-lg">
+            <p className="text-sm mb-4">
+              A task is still running. Switch to <span className="font-bold text-accent">
+                {pendingSwitch === 'evaluate' ? 'Skill Evaluator' : 'Dependency Graph'}
+              </span> and stop the current run?
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={cancelSwitch}
+                className="px-4 py-2 text-sm rounded border border-border bg-bg-tertiary text-text-dim hover:text-text transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmSwitch}
+                className="px-4 py-2 text-sm rounded bg-accent text-black font-bold hover:bg-accent/90 transition-colors"
+              >
+                Switch &amp; Stop
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      </div>
     </div>
   );
 }

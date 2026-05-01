@@ -72,6 +72,29 @@ export interface EvalConfig {
   count: number;
   verbose: boolean;
   azureResourceName?: string;
+  enabledTools?: string[];
+}
+
+export const KNOWN_TOOLS = [
+  'WebFetch',
+  'WebSearch',
+  'BraveSearch',
+  'Read',
+  'Write',
+  'Edit',
+  'Bash',
+  'Grep',
+  'Glob',
+  'ListFiles',
+  'TodoRead',
+  'TodoWrite',
+  'NotebookEdit',
+  'Agent',
+] as const;
+
+export function detectToolsInSkill(skillBody: string): string[] {
+  const lower = skillBody.toLowerCase();
+  return KNOWN_TOOLS.filter(tool => lower.includes(tool.toLowerCase()));
 }
 
 export interface ModelOption {

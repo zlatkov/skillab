@@ -26,6 +26,7 @@ interface LLMRequest {
   prompt?: string;
   temperature?: number;
   useMockTools?: boolean;
+  mockToolNames?: string[];
   maxSteps?: number;
   azureResourceName?: string;
 }
@@ -373,6 +374,7 @@ async function runSingleSkill(
       if (prompt.type === 'positive' && trigger.triggered) {
         try {
           log(onProgress, `  Running compliance test...`, 'info');
+          const toolNames = config.enabledTools ?? [];
           const compResult = await callLLM({
             provider: config.provider,
             apiKey: config.apiKey,
@@ -382,7 +384,8 @@ async function runSingleSkill(
               { role: 'user', content: prompt.text },
             ],
             temperature: 0.3,
-            useMockTools: true,
+            useMockTools: toolNames.length > 0,
+            mockToolNames: toolNames,
             maxSteps: 10,
             azureResourceName: config.azureResourceName,
           });
