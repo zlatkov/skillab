@@ -17,6 +17,7 @@ import {
   PROVIDER_NAMES,
   PROVIDER_MODELS,
   KNOWN_TOOLS,
+  DEFAULT_PROVIDER,
   detectToolsInSkill,
   getDefaultModels,
 } from '@/lib/types';
@@ -64,11 +65,12 @@ export default function Home() {
 
 
   // Config state
-  const [provider, setProvider] = useState<ProviderName>('openrouter');
+  const [provider, setProvider] = useState<ProviderName>(DEFAULT_PROVIDER);
   const [apiKey, setApiKey] = useState('');
-  const [selectedTestModels, setSelectedTestModels] = useState<string[]>(getDefaultModels('openrouter').test);
-  const [selectedGeneratorModels, setSelectedGeneratorModels] = useState<string[]>(getDefaultModels('openrouter').generator);
-  const [selectedJudgeModels, setSelectedJudgeModels] = useState<string[]>(getDefaultModels('openrouter').judge);
+  const [providerHasKey, setProviderHasKey] = useState<Record<string, boolean>>({});
+  const [selectedTestModels, setSelectedTestModels] = useState<string[]>(getDefaultModels(DEFAULT_PROVIDER).test);
+  const [selectedGeneratorModels, setSelectedGeneratorModels] = useState<string[]>(getDefaultModels(DEFAULT_PROVIDER).generator);
+  const [selectedJudgeModels, setSelectedJudgeModels] = useState<string[]>(getDefaultModels(DEFAULT_PROVIDER).judge);
   const [customModelInput, setCustomModelInput] = useState('');
   const [count, setCount] = useState(5);
   const [verbose, setVerbose] = useState(true);
@@ -81,10 +83,14 @@ export default function Home() {
   // Custom prompts
   const [customPromptsInput, setCustomPromptsInput] = useState('');
 
+  // Whether the current provider is using a server key (no user BYOK)
+  const usingServerKey = providerHasKey[provider] && !apiKey;
+
   // When provider changes, reset to that provider's defaults
   const handleProviderChange = (newProvider: ProviderName) => {
     setProvider(newProvider);
-    const defaults = getDefaultModels(newProvider);
+    const freeOnly = providerHasKey[newProvider] && !apiKey;
+    const defaults = getDefaultModels(newProvider, freeOnly);
     setSelectedTestModels(defaults.test);
     setSelectedGeneratorModels(defaults.generator);
     setSelectedJudgeModels(defaults.judge);
@@ -98,12 +104,33 @@ export default function Home() {
 
   // Refs
   const logsEndRef = useRef<HTMLDivElement>(null);
-  const abortRef = useRef(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const skipParseRef = useRef(false);
 
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
+
+  // Fetch which providers have server-side API keys
+  useEffect(() => {
+    fetch('/api/providers').then(r => r.json()).then(data => {
+      setProviderHasKey(data.hasKey ?? {});
+    }).catch(() => {});
+  }, []);
+
+  // Reset model selections when switching between server key and BYOK
+  const prevUsingServerKeyRef = useRef(usingServerKey);
+  useEffect(() => {
+    if (prevUsingServerKeyRef.current !== usingServerKey) {
+      prevUsingServerKeyRef.current = usingServerKey;
+      const defaults = getDefaultModels(provider, usingServerKey);
+      setSelectedTestModels(defaults.test);
+      setSelectedGeneratorModels(defaults.generator);
+      setSelectedJudgeModels(defaults.judge);
+      // Clamp count when switching to server key
+      if (usingServerKey) setCount(c => Math.min(c, 5));
+    }
+  }, [usingServerKey, provider]);
 
   // Auto-detect tools when selected skill changes
   useEffect(() => {
@@ -238,9 +265,12 @@ export default function Home() {
 
   // Run evaluation
   const handleRun = async () => {
-    if (skills.length === 0 || !apiKey) return;
+    if (skills.length === 0 || (!apiKey && !providerHasKey[provider])) return;
 
-    abortRef.current = false;
+    // Abort any previous run
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
     setStatus('running');
     setLogs([]);
     setResults([]);
@@ -291,23 +321,30 @@ export default function Home() {
         [skillToEval],
         config,
         (entry) => {
-          if (!abortRef.current) {
+          if (!controller.signal.aborted) {
             setLogs(prev => [...prev, entry]);
           }
         },
         customPrompts,
+        controller.signal,
       );
-      setResults(evalResults);
-      setStatus('complete');
+      if (!controller.signal.aborted) {
+        setResults(evalResults);
+        setStatus('complete');
+      }
     } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return;
       const msg = err instanceof Error ? err.message : String(err);
-      setLogs(prev => [...prev, { text: `Fatal error: ${msg}`, type: 'error', timestamp: Date.now() }]);
-      setStatus('error');
+      if (!controller.signal.aborted) {
+        setLogs(prev => [...prev, { text: `Fatal error: ${msg}`, type: 'error', timestamp: Date.now() }]);
+        setStatus('error');
+      }
     }
   };
 
   const handleStop = () => {
-    abortRef.current = true;
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
     setStatus('idle');
   };
 
@@ -331,7 +368,8 @@ export default function Home() {
 
   const confirmSwitch = () => {
     if (!pendingSwitch) return;
-    abortRef.current = true;
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
     setStatus('idle');
     setIsBuildingGraph(false);
     switchTo(pendingSwitch);
@@ -678,15 +716,24 @@ export default function Home() {
               </div>
 
               <div>
-                <label className="block text-xs text-text-dim mb-1">API Key</label>
+                <label className="block text-xs text-text-dim mb-1">
+                  API Key
+                  {providerHasKey[provider] && !apiKey && (
+                    <span className="ml-2 text-success font-normal">Server key available</span>
+                  )}
+                </label>
                 <input
                   type="password"
                   value={apiKey}
                   onChange={e => setApiKey(e.target.value)}
-                  placeholder={`Enter your ${provider} API key`}
+                  placeholder={providerHasKey[provider] ? `Using server key — or enter your own` : `Enter your ${provider} API key`}
                   className="w-full bg-bg-tertiary border border-border rounded px-3 py-2 text-sm"
                 />
-                <p className="text-xs text-text-dim mt-1">Keys are sent directly to the provider, never stored</p>
+                <p className="text-xs text-text-dim mt-1">
+                  {providerHasKey[provider]
+                    ? 'A server key is configured. Enter your own to override it.'
+                    : 'Keys are sent directly to the provider, never stored'}
+                </p>
               </div>
 
               {provider === 'azure' && (
@@ -702,47 +749,27 @@ export default function Home() {
               )}
             </div>
 
+            {usingServerKey && (
+              <div className="mt-4 px-3 py-2 rounded border border-accent/30 bg-accent/5 text-xs text-accent">
+                Using server key — free models only, 1 test model, max 5 prompts per type. Enter your own API key to remove limits.
+              </div>
+            )}
+
             {/* Test Models */}
             <div className="mt-4">
               <ModelPicker
                 label="Test Models"
-                description="Each selected model will be evaluated independently against the skill"
+                description={usingServerKey
+                  ? "One model at a time when using server key. Enter your own key for multi-model."
+                  : "Each selected model will be evaluated independently against the skill"}
                 options={PROVIDER_MODELS[provider].test}
                 selected={selectedTestModels}
                 onChange={setSelectedTestModels}
                 provider={provider}
-                defaultIds={getDefaultModels(provider).test}
+                defaultIds={getDefaultModels(provider, usingServerKey).test}
+                freeOnly={usingServerKey}
+                singleSelect={usingServerKey}
               />
-            </div>
-
-            {/* Settings row */}
-            <div className="mt-4 flex items-center gap-6 flex-wrap">
-              <div>
-                <label className="block text-xs text-text-dim mb-1">
-                  Prompts per type <span className="text-text-dim/60">(positive = should trigger, negative = should not)</span>
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min={1}
-                    max={20}
-                    value={count}
-                    onChange={e => setCount(parseInt(e.target.value) || 5)}
-                    className="w-20 bg-bg-tertiary border border-border rounded px-3 py-2 text-sm"
-                  />
-                  <span className="text-xs text-text-dim">{count} + {count} = {count * 2} total</span>
-                </div>
-              </div>
-
-              <label className="flex items-center gap-2 text-sm mt-4">
-                <input
-                  type="checkbox"
-                  checked={verbose}
-                  onChange={e => setVerbose(e.target.checked)}
-                  className="accent-accent"
-                />
-                Verbose
-              </label>
             </div>
 
             {/* Advanced options */}
@@ -750,7 +777,8 @@ export default function Home() {
               <summary className="text-sm cursor-pointer hover:text-text px-3 py-2 bg-bg-tertiary">
                 <span className="font-bold text-text-dim">Advanced Options</span>
                 <span className="text-xs text-text-dim/60 ml-2">
-                  — Generator: {selectedGeneratorModels.length > 0
+                  — {count}+{count} prompts
+                  {' | '}Generator: {selectedGeneratorModels.length > 0
                     ? (() => { const opt = PROVIDER_MODELS[provider].generator.find(o => o.id === selectedGeneratorModels[0]); return opt ? opt.label : selectedGeneratorModels[0]; })()
                     : 'none'}
                   {' | '}Judge: {selectedJudgeModels.length > 0
@@ -760,6 +788,39 @@ export default function Home() {
                 </span>
               </summary>
               <div className="p-3 space-y-4">
+                <div className="flex items-center gap-6 flex-wrap">
+                  <div>
+                    <label className="block text-xs text-text-dim mb-1">
+                      Prompts per type <span className="text-text-dim/60">(positive = should trigger, negative = should not)</span>
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={1}
+                        max={usingServerKey ? 5 : 20}
+                        value={count}
+                        onChange={e => {
+                          const max = usingServerKey ? 5 : 20;
+                          setCount(Math.min(parseInt(e.target.value) || 5, max));
+                        }}
+                        className="w-20 bg-bg-tertiary border border-border rounded px-3 py-2 text-sm"
+                      />
+                      <span className="text-xs text-text-dim">
+                        {count} + {count} = {count * 2} total
+                        {usingServerKey && ' (max 5 with server key)'}
+                      </span>
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={verbose}
+                      onChange={e => setVerbose(e.target.checked)}
+                      className="accent-accent"
+                    />
+                    Verbose output
+                  </label>
+                </div>
                 <ModelPicker
                   label="Generator Model"
                   description="Generates test prompts from the skill definition"
@@ -767,8 +828,9 @@ export default function Home() {
                   selected={selectedGeneratorModels}
                   onChange={setSelectedGeneratorModels}
                   provider={provider}
-                  defaultIds={getDefaultModels(provider).generator}
+                  defaultIds={getDefaultModels(provider, usingServerKey).generator}
                   singleSelect
+                  freeOnly={usingServerKey}
                 />
                 <ModelPicker
                   label="Judge Model"
@@ -777,8 +839,9 @@ export default function Home() {
                   selected={selectedJudgeModels}
                   onChange={setSelectedJudgeModels}
                   provider={provider}
-                  defaultIds={getDefaultModels(provider).judge}
+                  defaultIds={getDefaultModels(provider, usingServerKey).judge}
                   singleSelect
+                  freeOnly={usingServerKey}
                 />
                 {/* Mock Tools */}
                 <div>
@@ -905,7 +968,7 @@ export default function Home() {
           <div className="mt-4 flex gap-3">
             <button
               onClick={handleRun}
-              disabled={skills.length === 0 || !apiKey || status === 'running'}
+              disabled={skills.length === 0 || (!apiKey && !providerHasKey[provider]) || status === 'running'}
               className="px-6 py-2.5 bg-accent text-black font-bold rounded text-sm hover:bg-accent/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {status === 'running' ? (
@@ -1031,17 +1094,22 @@ function ModelPicker({
   provider,
   defaultIds,
   singleSelect = false,
+  freeOnly = false,
 }: {
   label: string;
   description: string;
-  options: Array<{ id: string; label: string }>;
+  options: Array<{ id: string; label: string; free?: boolean }>;
   selected: string[];
   onChange: (ids: string[]) => void;
   provider: ProviderName;
   defaultIds?: string[];
   singleSelect?: boolean;
+  freeOnly?: boolean;
 }) {
   const [customInput, setCustomInput] = useState('');
+
+  const visibleOptions = freeOnly ? options.filter(o => o.free) : options;
+  const hiddenCount = options.length - visibleOptions.length;
 
   const toggle = (id: string) => {
     if (singleSelect) {
@@ -1074,11 +1142,10 @@ function ModelPicker({
       <label className="block text-xs text-text-dim mb-1">{label}</label>
       <p className="text-xs text-text-dim/70 mb-2">{description}</p>
 
-      {options.length > 0 ? (
+      {visibleOptions.length > 0 ? (
         <div className="flex flex-wrap gap-1.5 mb-2">
-          {options.map((opt, i) => {
+          {visibleOptions.map((opt, i) => {
             const isSelected = selected.includes(opt.id);
-            const isDefault = defaultIds ? defaultIds.includes(opt.id) : i === 0;
             return (
               <button
                 key={opt.id}
@@ -1094,10 +1161,15 @@ function ModelPicker({
               </button>
             );
           })}
+          {freeOnly && hiddenCount > 0 && (
+            <span className="px-2.5 py-1 text-xs text-text-dim/50 italic">
+              +{hiddenCount} more with your own key
+            </span>
+          )}
         </div>
       ) : (
         <p className="text-xs text-text-dim/50 mb-2 italic">
-          No presets for {provider} — add model IDs manually below
+          {freeOnly ? 'No free models available — enter your own API key to unlock models' : `No presets for ${provider} — add model IDs manually below`}
         </p>
       )}
 
@@ -1118,23 +1190,25 @@ function ModelPicker({
         </div>
       )}
 
-      {/* Add custom model */}
-      <div className="flex gap-2">
-        <input
-          value={customInput}
-          onChange={e => setCustomInput(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustom(); } }}
-          placeholder={singleSelect ? 'Or enter a model ID...' : 'Add custom model ID...'}
-          className="flex-1 bg-bg-tertiary border border-border rounded px-2.5 py-1 text-xs font-mono"
-        />
-        <button
-          onClick={addCustom}
-          disabled={!customInput.trim()}
-          className="px-3 py-1 text-xs bg-bg-tertiary border border-border rounded hover:border-border-hover transition-colors disabled:opacity-30"
-        >
-          {singleSelect ? 'Use' : 'Add'}
-        </button>
-      </div>
+      {/* Add custom model — hidden when using server key (freeOnly) */}
+      {!freeOnly && (
+        <div className="flex gap-2">
+          <input
+            value={customInput}
+            onChange={e => setCustomInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustom(); } }}
+            placeholder={singleSelect ? 'Or enter a model ID...' : 'Add custom model ID...'}
+            className="flex-1 bg-bg-tertiary border border-border rounded px-2.5 py-1 text-xs font-mono"
+          />
+          <button
+            onClick={addCustom}
+            disabled={!customInput.trim()}
+            className="px-3 py-1 text-xs bg-bg-tertiary border border-border rounded hover:border-border-hover transition-colors disabled:opacity-30"
+          >
+            {singleSelect ? 'Use' : 'Add'}
+          </button>
+        </div>
+      )}
 
       {selected.length > 0 && (
         <p className="text-xs text-text-dim/50 mt-1.5">
@@ -1204,17 +1278,13 @@ function ResultsTable({ reports }: { reports: EvalReport[] }) {
           ))}
         </tbody>
       </table>
-      {reports.length > 0 && (
+      {reports.length > 1 && (
         <div className="mt-2 text-sm">
           <span className="text-success">Best: </span>
           <span>{reports[0].modelId} ({reports[0].overall}%)</span>
-          {reports.length > 1 && (
-            <>
-              <span className="text-text-dim mx-2">|</span>
-              <span className="text-error">Worst: </span>
-              <span>{reports[reports.length - 1].modelId} ({reports[reports.length - 1].overall}%)</span>
-            </>
-          )}
+          <span className="text-text-dim mx-2">|</span>
+          <span className="text-error">Worst: </span>
+          <span>{reports[reports.length - 1].modelId} ({reports[reports.length - 1].overall}%)</span>
         </div>
       )}
     </div>

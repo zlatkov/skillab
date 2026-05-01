@@ -37,11 +37,12 @@ interface LLMResponse {
   steps: Array<{ toolCalls: Array<{ toolName: string; args: Record<string, unknown> }> }>;
 }
 
-async function callLLM(req: LLMRequest): Promise<LLMResponse> {
+async function callLLM(req: LLMRequest, signal?: AbortSignal): Promise<LLMResponse> {
   const res = await fetch('/api/generate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),
+    signal,
   });
   if (!res.ok) {
     const error = await res.text();
@@ -54,12 +55,14 @@ async function callLLMWithRetry(
   req: LLMRequest,
   fallbackModelIds: string[],
   maxRetries = 3,
+  signal?: AbortSignal,
 ): Promise<LLMResponse> {
   for (let modelIdx = 0; modelIdx < fallbackModelIds.length; modelIdx++) {
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
-        return await callLLM({ ...req, modelId: fallbackModelIds[modelIdx] });
-      } catch {
+        return await callLLM({ ...req, modelId: fallbackModelIds[modelIdx] }, signal);
+      } catch (err) {
+        if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
         if (attempt < maxRetries - 1) {
           await new Promise(r => setTimeout(r, 2000));
         }
@@ -135,6 +138,7 @@ async function generateTestPrompts(
   config: EvalConfig,
   onProgress: ProgressCallback,
   customPrompts?: TestPrompt[],
+  signal?: AbortSignal,
 ): Promise<TestPrompt[]> {
   if (customPrompts) {
     log(onProgress, `Using ${customPrompts.length} custom test prompts`, 'info');
@@ -143,6 +147,7 @@ async function generateTestPrompts(
 
   for (let modelIdx = 0; modelIdx < config.generatorModelIds.length; modelIdx++) {
     for (let attempt = 0; attempt < 3; attempt++) {
+      if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
       try {
         const { text } = await callLLM({
           provider: config.provider,
@@ -154,10 +159,11 @@ async function generateTestPrompts(
             : `${GENERATION_PROMPT(skill, config.count)}\n\nYour previous response was invalid JSON. Return ONLY valid JSON.`,
           temperature: 0.8,
           azureResourceName: config.azureResourceName,
-        });
+        }, signal);
         const cleaned = stripCodeFences(text);
         return validatePrompts(JSON.parse(cleaned), config.count);
       } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') throw err;
         const msg = err instanceof Error ? err.message : String(err);
         log(onProgress, `Generator ${config.generatorModelIds[modelIdx]} (attempt ${attempt + 1}/3): ${msg}`, 'warning');
         if (attempt < 2) await new Promise(r => setTimeout(r, 2000));
@@ -290,10 +296,11 @@ async function runSingleSkill(
   onProgress: ProgressCallback,
   siblingSkills?: SkillDefinition[],
   customPrompts?: TestPrompt[],
+  signal?: AbortSignal,
 ): Promise<BatchSkillReport> {
   // Generate test prompts
   log(onProgress, `Generating test prompts for "${skill.name}"...`, 'info');
-  const prompts = await generateTestPrompts(skill, config, onProgress, customPrompts);
+  const prompts = await generateTestPrompts(skill, config, onProgress, customPrompts, signal);
   log(onProgress, `Generated ${prompts.length} test prompts`, 'success');
 
   if (config.verbose) {
@@ -312,6 +319,7 @@ async function runSingleSkill(
 
   for (const modelId of config.modelIds) {
     for (const prompt of prompts) {
+      if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
       completed++;
       log(onProgress, `[${completed}/${totalTests}] Testing ${modelId} — ${prompt.type}: "${prompt.text.slice(0, 50)}..."`, 'progress');
 
@@ -329,9 +337,10 @@ async function runSingleSkill(
           ],
           temperature: 0.3,
           azureResourceName: config.azureResourceName,
-        });
+        }, signal);
         response = result.text;
       } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') throw err;
         error = err instanceof Error ? err.message : String(err);
         log(onProgress, `  Error: ${error}`, 'error');
       }
@@ -360,9 +369,12 @@ async function runSingleSkill(
             azureResourceName: config.azureResourceName,
           },
           config.judgeModelIds,
+          3,
+          signal,
         );
         trigger = safeParseTriggerEval(judgeResult.text);
       } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') throw err;
         const msg = err instanceof Error ? err.message : String(err);
         trigger = { triggered: false, correct: false, reason: `Judge failed: ${msg}` };
       }
@@ -388,7 +400,7 @@ async function runSingleSkill(
             mockToolNames: toolNames,
             maxSteps: 10,
             azureResourceName: config.azureResourceName,
-          });
+          }, signal);
 
           const allToolCalls = compResult.steps.flatMap(s => s.toolCalls ?? []);
           const toolCallSummary = allToolCalls.length > 0
@@ -409,10 +421,13 @@ async function runSingleSkill(
               azureResourceName: config.azureResourceName,
             },
             config.judgeModelIds,
+            3,
+            signal,
           );
           compliance = safeParseComplianceEval(judgeText.text);
           log(onProgress, `  Compliance: ${compliance.compliant ? 'PASS' : 'FAIL'} (${compliance.score}/100)`, compliance.compliant ? 'success' : 'warning');
         } catch (err) {
+          if (err instanceof DOMException && err.name === 'AbortError') throw err;
           const msg = err instanceof Error ? err.message : String(err);
           compliance = { compliant: false, score: 0, reason: `Compliance failed: ${msg}` };
           log(onProgress, `  Compliance error: ${msg}`, 'error');
@@ -439,15 +454,17 @@ export async function runEvaluation(
   config: EvalConfig,
   onProgress: ProgressCallback,
   customPrompts?: TestPrompt[],
+  signal?: AbortSignal,
 ): Promise<BatchSkillReport[]> {
   const results: BatchSkillReport[] = [];
 
   for (let i = 0; i < skills.length; i++) {
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
     const skill = skills[i];
     const siblingSkills = skills.filter((_, idx) => idx !== i);
 
     log(onProgress, `\n[${i + 1}/${skills.length}] Evaluating "${skill.name}"...`, 'info');
-    const result = await runSingleSkill(skill, config, onProgress, siblingSkills, customPrompts);
+    const result = await runSingleSkill(skill, config, onProgress, siblingSkills, customPrompts, signal);
     results.push(result);
     log(onProgress, `Completed "${skill.name}"`, 'success');
   }

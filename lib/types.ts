@@ -1,4 +1,5 @@
-export const PROVIDER_NAMES = ['openrouter', 'anthropic', 'openai', 'google', 'azure'] as const;
+export const PROVIDER_NAMES = ['groq', 'openrouter', 'anthropic', 'openai', 'google', 'azure'] as const;
+export const DEFAULT_PROVIDER: ProviderName = 'groq';
 export type ProviderName = (typeof PROVIDER_NAMES)[number];
 
 export interface SkillDefinition {
@@ -101,6 +102,7 @@ export interface ModelOption {
   id: string;
   label: string;
   category: 'test' | 'generator' | 'judge' | 'all';
+  free?: boolean;
 }
 
 export const PROVIDER_MODELS: Record<ProviderName, {
@@ -110,23 +112,23 @@ export const PROVIDER_MODELS: Record<ProviderName, {
 }> = {
   openrouter: {
     test: [
-      { id: 'anthropic/claude-sonnet-4', label: 'anthropic/claude-sonnet-4', category: 'test' },
+      { id: 'deepseek/deepseek-chat-v3-0324', label: 'deepseek/deepseek-chat-v3-0324', category: 'test', free: true },
+      { id: 'meta-llama/llama-3.3-70b-instruct', label: 'meta-llama/llama-3.3-70b-instruct', category: 'test', free: true },
+      { id: 'google/gemini-2.5-flash', label: 'google/gemini-2.5-flash', category: 'test', free: true },
+      { id: 'openai/gpt-4.1-mini', label: 'openai/gpt-4.1-mini', category: 'test' },
       { id: 'openai/gpt-4.1', label: 'openai/gpt-4.1', category: 'test' },
       { id: 'openai/gpt-4o', label: 'openai/gpt-4o', category: 'test' },
+      { id: 'anthropic/claude-sonnet-4', label: 'anthropic/claude-sonnet-4', category: 'test' },
       { id: 'google/gemini-2.5-pro', label: 'google/gemini-2.5-pro', category: 'test' },
-      { id: 'google/gemini-2.5-flash', label: 'google/gemini-2.5-flash', category: 'test' },
-      { id: 'deepseek/deepseek-chat-v3-0324', label: 'deepseek/deepseek-chat-v3-0324', category: 'test' },
-      { id: 'meta-llama/llama-3.3-70b-instruct', label: 'meta-llama/llama-3.3-70b-instruct', category: 'test' },
-      { id: 'openai/gpt-4.1-mini', label: 'openai/gpt-4.1-mini', category: 'test' },
     ],
     generator: [
-      { id: 'google/gemini-2.5-flash', label: 'google/gemini-2.5-flash', category: 'generator' },
-      { id: 'deepseek/deepseek-chat-v3-0324', label: 'deepseek/deepseek-chat-v3-0324', category: 'generator' },
+      { id: 'deepseek/deepseek-chat-v3-0324', label: 'deepseek/deepseek-chat-v3-0324', category: 'generator', free: true },
+      { id: 'google/gemini-2.5-flash', label: 'google/gemini-2.5-flash', category: 'generator', free: true },
       { id: 'openai/gpt-4.1-mini', label: 'openai/gpt-4.1-mini', category: 'generator' },
     ],
     judge: [
-      { id: 'google/gemini-2.5-flash', label: 'google/gemini-2.5-flash', category: 'judge' },
-      { id: 'deepseek/deepseek-chat-v3-0324', label: 'deepseek/deepseek-chat-v3-0324', category: 'judge' },
+      { id: 'deepseek/deepseek-chat-v3-0324', label: 'deepseek/deepseek-chat-v3-0324', category: 'judge', free: true },
+      { id: 'google/gemini-2.5-flash', label: 'google/gemini-2.5-flash', category: 'judge', free: true },
       { id: 'openai/gpt-4.1-mini', label: 'openai/gpt-4.1-mini', category: 'judge' },
     ],
   },
@@ -170,6 +172,20 @@ export const PROVIDER_MODELS: Record<ProviderName, {
       { id: 'gemini-2.5-flash', label: 'gemini-2.5-flash', category: 'judge' },
     ],
   },
+  groq: {
+    test: [
+      { id: 'llama-3.3-70b-versatile', label: 'llama-3.3-70b-versatile', category: 'test', free: true },
+      { id: 'llama-3.1-8b-instant', label: 'llama-3.1-8b-instant', category: 'test', free: true },
+      { id: 'qwen-qwq-32b', label: 'qwen-qwq-32b', category: 'test', free: true },
+      { id: 'mixtral-8x7b-32768', label: 'mixtral-8x7b-32768', category: 'test', free: true },
+    ],
+    generator: [
+      { id: 'llama-3.3-70b-versatile', label: 'llama-3.3-70b-versatile', category: 'generator', free: true },
+    ],
+    judge: [
+      { id: 'llama-3.3-70b-versatile', label: 'llama-3.3-70b-versatile', category: 'judge', free: true },
+    ],
+  },
   azure: {
     test: [],
     generator: [],
@@ -178,12 +194,17 @@ export const PROVIDER_MODELS: Record<ProviderName, {
 };
 
 // Defaults: first model from each category for the selected provider
-export function getDefaultModels(provider: ProviderName) {
+// When freeOnly is true, only pick from models marked free
+export function getDefaultModels(provider: ProviderName, freeOnly = false) {
   const models = PROVIDER_MODELS[provider];
+  const pick = (list: ModelOption[]) => {
+    const filtered = freeOnly ? list.filter(m => m.free) : list;
+    return filtered.length > 0 ? [filtered[0].id] : [];
+  };
   return {
-    test: models.test.length > 0 ? [models.test[0].id] : [],
-    generator: models.generator.length > 0 ? [models.generator[0].id] : [],
-    judge: models.judge.length > 0 ? [models.judge[0].id] : [],
+    test: pick(models.test),
+    generator: pick(models.generator),
+    judge: pick(models.judge),
   };
 }
 
