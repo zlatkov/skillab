@@ -12,10 +12,16 @@ function toRawGitHubUrl(owner: string, repo: string, branch: string, path: strin
   return `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${path}`;
 }
 
-async function fetchText(url: string): Promise<string> {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status} ${res.statusText}`);
-  return res.text();
+async function fetchText(url: string, timeoutMs = 10000): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status} ${res.statusText}`);
+    return await res.text();
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function fetchGitHubTree(owner: string, repo: string, branch: string, subPath: string): Promise<string[]> {
@@ -63,17 +69,34 @@ async function scanGitHubRepo(
 
   onStatus?.(`Found ${skillPaths.length} skill(s), fetching...`);
 
+  // Fetch in parallel with concurrency limit
+  const CONCURRENCY = 10;
   const skills: SkillDefinition[] = [];
-  for (const filePath of skillPaths) {
-    const rawUrl = toRawGitHubUrl(owner, repo, usedBranch, filePath);
-    try {
-      const content = await fetchText(rawUrl);
-      const skill = parseSkillContent(content, filePath.split('/').slice(-2, -1)[0] || filePath);
-      skills.push(skill);
-    } catch {
-      // skip unparseable files
+  let fetched = 0;
+  let failed = 0;
+
+  for (let i = 0; i < skillPaths.length; i += CONCURRENCY) {
+    const batch = skillPaths.slice(i, i + CONCURRENCY);
+    const batchNames = batch.map(p => p.split('/').slice(-2, -1)[0] || p);
+    onStatus?.(`Fetching ${fetched + 1}-${Math.min(fetched + batch.length, skillPaths.length)}/${skillPaths.length}: ${batchNames.slice(0, 3).join(', ')}${batchNames.length > 3 ? '...' : ''}`);
+    const results = await Promise.allSettled(
+      batch.map(async (filePath) => {
+        const rawUrl = toRawGitHubUrl(owner, repo, usedBranch, filePath);
+        const content = await fetchText(rawUrl);
+        return parseSkillContent(content, filePath.split('/').slice(-2, -1)[0] || filePath);
+      }),
+    );
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        skills.push(result.value);
+      } else {
+        failed++;
+      }
     }
+    fetched += batch.length;
   }
+
+  onStatus?.(`Loaded ${skills.length} skill(s)${failed > 0 ? ` (${failed} failed)` : ''}`);
 
   return skills;
 }
@@ -284,45 +307,65 @@ function slugify(name: string): string {
   return name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
 }
 
-export function buildDependencyGraph(skills: SkillDefinition[]): SkillGraph {
+export async function buildDependencyGraph(
+  skills: SkillDefinition[],
+  onProgress?: (current: number, total: number) => void,
+): Promise<SkillGraph> {
   const nodes = skills.map(s => s.name);
   const edges: SkillEdge[] = [];
+  const total = skills.length;
 
-  for (const skill of skills) {
-    const searchText = skill.rawContent;
-    for (const other of skills) {
-      if (other.name === skill.name) continue;
+  // Pre-compute: lowercase content for each skill, and search tokens per skill
+  const skillData = skills.map(s => {
+    const lower = s.rawContent.toLowerCase();
+    const slug = slugify(s.name);
+    return {
+      name: s.name,
+      lower,
+      nameLower: s.name.toLowerCase(),
+      slug,
+      pathNeedle1: `skills/${slug}/`,
+      pathNeedle2: `skills/${s.name.toLowerCase()}/`,
+    };
+  });
+
+  for (let i = 0; i < skillData.length; i++) {
+    const skill = skillData[i];
+
+    for (let j = 0; j < skillData.length; j++) {
+      if (i === j) continue;
+      const other = skillData[j];
       const mentions: string[] = [];
 
-      const namePattern = new RegExp(`\\b${escapeRegex(other.name)}\\b`, 'gi');
-      if (namePattern.test(searchText)) {
+      // Name mention — simple includes check first, then regex only if found
+      if (skill.lower.includes(other.nameLower)) {
         mentions.push(`name: "${other.name}"`);
       }
 
-      const slugified = slugify(other.name);
-      const pathPatterns = [
-        new RegExp(`skills/${escapeRegex(slugified)}/`, 'gi'),
-        new RegExp(`skills/${escapeRegex(other.name)}/`, 'gi'),
-      ];
-      for (const pattern of pathPatterns) {
-        if (pattern.test(searchText)) {
-          mentions.push('path reference');
-          break;
-        }
+      // Path references — simple string search
+      if (skill.lower.includes(other.pathNeedle1) || skill.lower.includes(other.pathNeedle2)) {
+        mentions.push('path reference');
       }
 
-      const depsPattern = new RegExp(
-        `(?:dependencies|requires|uses|depends_on|related)\\s*:.*${escapeRegex(other.name)}`,
-        'gim',
-      );
-      if (depsPattern.test(searchText)) {
-        mentions.push('frontmatter dependency');
+      // Frontmatter dependency — simple includes check
+      if (mentions.length === 0) {
+        const depKeywords = ['dependencies', 'requires', 'uses', 'depends_on', 'related'];
+        for (const kw of depKeywords) {
+          if (skill.lower.includes(kw) && skill.lower.includes(other.nameLower)) {
+            mentions.push('frontmatter dependency');
+            break;
+          }
+        }
       }
 
       if (mentions.length > 0) {
         edges.push({ from: skill.name, to: other.name, mentions });
       }
     }
+
+    onProgress?.(i + 1, total);
+    // Yield to the main thread so the UI stays responsive
+    await new Promise(r => setTimeout(r, 0));
   }
 
   return { nodes, edges };

@@ -153,9 +153,9 @@ export const PROVIDER_MODELS: Record<ProviderName, {
 export function getDefaultModels(provider: ProviderName) {
   const models = PROVIDER_MODELS[provider];
   return {
-    test: models.test.map(m => m.id),
-    generator: models.generator.map(m => m.id),
-    judge: models.judge.map(m => m.id),
+    test: models.test.length > 0 ? [models.test[0].id] : [],
+    generator: models.generator.length > 0 ? [models.generator[0].id] : [],
+    judge: models.judge.length > 0 ? [models.judge[0].id] : [],
   };
 }
 

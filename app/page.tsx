@@ -53,9 +53,11 @@ export default function Home() {
   const [parseError, setParseError] = useState('');
   const [githubSource, setGithubSource] = useState('');
   const [actionMode, setActionMode] = useState<ActionMode>('evaluate');
+  const [selectedSkillIndex, setSelectedSkillIndex] = useState<number>(0);
   const [graphBuilt, setGraphBuilt] = useState(false);
   const [isFetchingGithub, setIsFetchingGithub] = useState(false);
   const [githubStatus, setGithubStatus] = useState('');
+
 
   // Config state
   const [provider, setProvider] = useState<ProviderName>('openrouter');
@@ -89,6 +91,7 @@ export default function Home() {
   // Refs
   const logsEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef(false);
+  const skipParseRef = useRef(false);
 
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -96,6 +99,10 @@ export default function Home() {
 
   // Parse skill content whenever it changes
   const handleParseSkills = useCallback(() => {
+    if (skipParseRef.current) {
+      skipParseRef.current = false;
+      return;
+    }
     if (!skillContent.trim()) {
       setSkills([]);
       setParseError('');
@@ -162,9 +169,10 @@ export default function Home() {
         setParseError('No SKILL.md files found');
       } else {
         setSkills(fetched);
-        setGithubStatus(`Found ${fetched.length} skill(s)`);
         setGraph(null);
-        // Also populate the content area so user can switch to Paste/Edit
+        // Populate the content area so user can switch to Paste/Edit
+        // Skip re-parsing since we already have the parsed skills
+        skipParseRef.current = true;
         setSkillContent(fetched.map(s => s.rawContent).join('\n===SKILL===\n'));
       }
     } catch (err) {
@@ -182,6 +190,7 @@ export default function Home() {
     setGraphBuilt(false);
     setParseError('');
     setGithubStatus('');
+    setSelectedSkillIndex(0);
   };
 
   const handleRemoveSkill = (index: number) => {
@@ -190,13 +199,24 @@ export default function Home() {
     setSkillContent(updated.map(s => s.rawContent).join('\n===SKILL===\n'));
     setGraph(null);
     setGraphBuilt(false);
+    setSelectedSkillIndex(prev => prev >= updated.length ? 0 : prev);
   };
 
   // Build dependency graph
-  const handleBuildGraph = () => {
+  const [graphProgress, setGraphProgress] = useState('');
+  const [isBuildingGraph, setIsBuildingGraph] = useState(false);
+
+  const handleBuildGraph = async () => {
     if (skills.length < 2) return;
-    setGraph(buildDependencyGraph(skills));
+    setIsBuildingGraph(true);
+    setGraphProgress(`Analysing 0/${skills.length} skills...`);
+    const result = await buildDependencyGraph(skills, (current, total) => {
+      setGraphProgress(`Analysing ${current}/${total} skills...`);
+    });
+    setGraph(result);
     setGraphBuilt(true);
+    setGraphProgress('');
+    setIsBuildingGraph(false);
   };
 
   // Run evaluation
@@ -209,17 +229,17 @@ export default function Home() {
     setResults([]);
 
     if (selectedTestModels.length === 0) {
-      setLogs([{ text: 'No test models selected. Pick at least one model to evaluate.', type: 'error', timestamp: Date.now() }]);
+      setLogs([{ text: 'No test model selected. Pick a model to evaluate.', type: 'error', timestamp: Date.now() }]);
       setStatus('error');
       return;
     }
     if (selectedGeneratorModels.length === 0) {
-      setLogs([{ text: 'No generator models selected. Pick at least one in Advanced options.', type: 'error', timestamp: Date.now() }]);
+      setLogs([{ text: 'No generator model selected. Pick one in Advanced Options.', type: 'error', timestamp: Date.now() }]);
       setStatus('error');
       return;
     }
     if (selectedJudgeModels.length === 0) {
-      setLogs([{ text: 'No judge models selected. Pick at least one in Advanced options.', type: 'error', timestamp: Date.now() }]);
+      setLogs([{ text: 'No judge model selected. Pick one in Advanced Options.', type: 'error', timestamp: Date.now() }]);
       setStatus('error');
       return;
     }
@@ -248,8 +268,9 @@ export default function Home() {
     }
 
     try {
+      const skillToEval = skills[selectedSkillIndex] || skills[0];
       const evalResults = await runEvaluation(
-        skills,
+        [skillToEval],
         config,
         (entry) => {
           if (!abortRef.current) {
@@ -333,6 +354,30 @@ export default function Home() {
             <p className="text-xs text-text-dim mt-2">
               Supports: <code className="text-text">owner/repo</code> &middot; <code className="text-text">https://github.com/owner/repo</code> &middot; <code className="text-text">.../tree/main/skills</code> &middot; <code className="text-text">.../blob/main/SKILL.md</code>
             </p>
+            {!skills.length && !isFetchingGithub && (
+              <div className="mt-3 pt-3 border-t border-border">
+                <p className="text-xs text-text-dim mb-2">
+                  Top repos on <a href="https://skills.sh" target="_blank" rel="noopener" className="text-accent hover:underline">skills.sh</a>:
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { label: 'Vercel Labs', repo: 'vercel-labs/agent-skills' },
+                    { label: 'Anthropic', repo: 'anthropics/skills' },
+                    { label: 'Microsoft', repo: 'microsoft/azure-skills' },
+                    { label: 'Remotion', repo: 'remotion-dev/skills' },
+                    { label: 'Soultrace', repo: 'soultrace-ai/soultrace-skill' },
+                  ].map(({ label, repo }) => (
+                    <button
+                      key={repo}
+                      onClick={() => setGithubSource(repo)}
+                      className="px-2.5 py-1 text-xs rounded border border-border bg-bg-tertiary text-text-dim hover:border-accent/50 hover:text-accent transition-colors cursor-pointer"
+                    >
+                      {label} <span className="opacity-50">({repo})</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -386,12 +431,13 @@ export default function Home() {
                 Clear all
               </button>
             </div>
+            <div className="max-h-48 overflow-y-auto">
             {skills.map((skill, i) => (
               <div key={i} className="flex items-center gap-2 text-sm mb-1 group rounded px-2 py-1 -mx-2 hover:bg-bg-tertiary transition-colors">
                 <span className="text-success">&#10003;</span>
                 <span className="font-bold">{skill.name}</span>
                 {skill.description && skill.description !== 'No description available' && (
-                  <span className="text-text-dim">&#8212; {skill.description.slice(0, 100)}</span>
+                  <span className="text-text-dim">&#8212; {truncateAtSentence(skill.description, 120)}</span>
                 )}
                 <button
                   onClick={() => handleRemoveSkill(i)}
@@ -402,6 +448,7 @@ export default function Home() {
                 </button>
               </div>
             ))}
+            </div>
           </div>
         )}
         {parseError && (
@@ -416,7 +463,7 @@ export default function Home() {
         <h2 className="text-sm font-bold text-text-dim uppercase tracking-wider mb-3">Tool</h2>
         <div className="flex gap-2 mb-4">
           <button
-            onClick={() => setActionMode('evaluate')}
+            onClick={() => { setActionMode('evaluate'); setGraph(null); setGraphBuilt(false); }}
             className={`px-4 py-2 text-sm rounded border transition-colors ${
               actionMode === 'evaluate'
                 ? 'bg-accent/20 border-accent/50 text-accent'
@@ -444,6 +491,21 @@ export default function Home() {
 
         {actionMode === 'evaluate' && (
           <>
+            {skills.length > 1 && (
+              <div className="mb-4">
+                <label className="block text-xs text-text-dim mb-1">Skill to evaluate</label>
+                <select
+                  value={selectedSkillIndex}
+                  onChange={e => setSelectedSkillIndex(parseInt(e.target.value))}
+                  className="w-full bg-bg-tertiary border border-border rounded px-3 py-2 text-sm"
+                >
+                  {skills.map((skill, i) => (
+                    <option key={i} value={i}>{skill.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs text-text-dim mb-1">Provider</label>
@@ -486,12 +548,14 @@ export default function Home() {
             {/* Test Models */}
             <div className="mt-4">
               <ModelPicker
-                label="Test Models"
-                description="Models to evaluate — these receive the skill-injected prompt and get scored"
+                label="Test Model"
+                description="The model to evaluate — receives the skill-injected prompt and gets scored"
                 options={PROVIDER_MODELS[provider].test}
                 selected={selectedTestModels}
                 onChange={setSelectedTestModels}
                 provider={provider}
+                defaultIds={getDefaultModels(provider).test}
+                singleSelect
               />
             </div>
 
@@ -510,7 +574,7 @@ export default function Home() {
                     onChange={e => setCount(parseInt(e.target.value) || 5)}
                     className="w-20 bg-bg-tertiary border border-border rounded px-3 py-2 text-sm"
                   />
-                  <span className="text-xs text-text-dim">{count}+ {count}- = {count * 2} total</span>
+                  <span className="text-xs text-text-dim">{count} + {count} = {count * 2} total</span>
                 </div>
               </div>
 
@@ -529,24 +593,35 @@ export default function Home() {
             <details className="mt-4 border border-border rounded-lg overflow-hidden">
               <summary className="text-sm cursor-pointer hover:text-text px-3 py-2 bg-bg-tertiary">
                 <span className="font-bold text-text-dim">Advanced Options</span>
-                <span className="text-xs text-text-dim/60 ml-2">— generator models, judge models, custom prompts</span>
+                <span className="text-xs text-text-dim/60 ml-2">
+                  — Generator: {selectedGeneratorModels.length > 0
+                    ? (() => { const opt = PROVIDER_MODELS[provider].generator.find(o => o.id === selectedGeneratorModels[0]); return opt ? opt.label : selectedGeneratorModels[0]; })()
+                    : 'none'}
+                  {' | '}Judge: {selectedJudgeModels.length > 0
+                    ? (() => { const opt = PROVIDER_MODELS[provider].judge.find(o => o.id === selectedJudgeModels[0]); return opt ? opt.label : selectedJudgeModels[0]; })()
+                    : 'none'}
+                </span>
               </summary>
               <div className="p-3 space-y-4">
                 <ModelPicker
-                  label="Generator Models"
-                  description="Generate test prompts from the skill definition (with fallback order)"
+                  label="Generator Model"
+                  description="Generates test prompts from the skill definition"
                   options={PROVIDER_MODELS[provider].generator}
                   selected={selectedGeneratorModels}
                   onChange={setSelectedGeneratorModels}
                   provider={provider}
+                  defaultIds={getDefaultModels(provider).generator}
+                  singleSelect
                 />
                 <ModelPicker
-                  label="Judge Models"
-                  description="Evaluate trigger accuracy and compliance (with fallback order)"
+                  label="Judge Model"
+                  description="Evaluates trigger accuracy and instruction compliance"
                   options={PROVIDER_MODELS[provider].judge}
                   selected={selectedJudgeModels}
                   onChange={setSelectedJudgeModels}
                   provider={provider}
+                  defaultIds={getDefaultModels(provider).judge}
+                  singleSelect
                 />
                 <div>
                   <label className="block text-xs text-text-dim mb-1">
@@ -585,14 +660,19 @@ export default function Home() {
         ) : (
           <button
             onClick={handleBuildGraph}
-            disabled={skills.length < 2}
+            disabled={skills.length < 2 || isBuildingGraph}
             className={`px-6 py-2.5 font-bold rounded text-sm transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed ${
               graphBuilt
                 ? 'bg-success text-black'
                 : 'bg-accent text-black hover:bg-accent/90'
             }`}
           >
-            {graphBuilt ? '✓ Graph Built' : 'Build Graph'}
+            {isBuildingGraph ? (
+              <span className="flex items-center gap-2">
+                <span className="inline-block w-3 h-3 border-2 border-black/30 border-t-black rounded-full animate-spin" />
+                <span className="loading-text">{graphProgress}</span>
+              </span>
+            ) : graphBuilt ? '✓ Graph Built' : 'Build Graph'}
           </button>
         )}
         {status === 'running' && (
@@ -609,13 +689,7 @@ export default function Home() {
       {graph && (
         <section className="mb-6 border border-border rounded-lg p-4 bg-bg-secondary">
           <h2 className="text-sm font-bold text-text-dim uppercase tracking-wider mb-3">Dependency Graph</h2>
-          {graph.edges.length > 0 ? (
-            <GraphView graph={graph} />
-          ) : (
-            <p className="text-sm text-text-dim">
-              {graph.nodes.length} skill{graph.nodes.length !== 1 ? 's' : ''} loaded — no cross-references found between them.
-            </p>
-          )}
+          <GraphView graph={graph} />
         </section>
       )}
 
@@ -682,6 +756,8 @@ function ModelPicker({
   selected,
   onChange,
   provider,
+  defaultIds,
+  singleSelect = false,
 }: {
   label: string;
   description: string;
@@ -689,20 +765,29 @@ function ModelPicker({
   selected: string[];
   onChange: (ids: string[]) => void;
   provider: ProviderName;
+  defaultIds?: string[];
+  singleSelect?: boolean;
 }) {
   const [customInput, setCustomInput] = useState('');
 
   const toggle = (id: string) => {
-    onChange(
-      selected.includes(id)
-        ? selected.filter(m => m !== id)
-        : [...selected, id],
-    );
+    if (singleSelect) {
+      onChange(selected.includes(id) ? [] : [id]);
+    } else {
+      onChange(
+        selected.includes(id)
+          ? selected.filter(m => m !== id)
+          : [...selected, id],
+      );
+    }
   };
 
   const addCustom = () => {
     const id = customInput.trim();
-    if (id && !selected.includes(id)) {
+    if (!id) return;
+    if (singleSelect) {
+      onChange([id]);
+    } else if (!selected.includes(id)) {
       onChange([...selected, id]);
     }
     setCustomInput('');
@@ -718,20 +803,21 @@ function ModelPicker({
 
       {options.length > 0 ? (
         <div className="flex flex-wrap gap-1.5 mb-2">
-          {options.map(opt => {
+          {options.map((opt, i) => {
             const isSelected = selected.includes(opt.id);
+            const isDefault = defaultIds ? defaultIds.includes(opt.id) : i === 0;
             return (
               <button
                 key={opt.id}
                 onClick={() => toggle(opt.id)}
-                className={`px-2.5 py-1 text-xs rounded border transition-colors ${
+                className={`px-2.5 py-1 text-xs rounded border transition-colors cursor-pointer ${
                   isSelected
                     ? 'bg-accent/20 border-accent/50 text-accent'
-                    : 'bg-bg-tertiary border-border text-text-dim hover:border-border-hover hover:text-text'
+                    : 'bg-bg-tertiary border-border text-text-dim hover:border-accent/30 hover:text-text'
                 }`}
                 title={opt.id}
               >
-                {opt.label}
+                {opt.label}{isDefault ? ' *' : ''}
               </button>
             );
           })}
@@ -749,7 +835,7 @@ function ModelPicker({
             <button
               key={id}
               onClick={() => toggle(id)}
-              className="px-2.5 py-1 text-xs rounded border bg-accent/20 border-accent/50 text-accent"
+              className="px-2.5 py-1 text-xs rounded border bg-accent/20 border-accent/50 text-accent cursor-pointer"
               title={id}
             >
               {id}
@@ -765,7 +851,7 @@ function ModelPicker({
           value={customInput}
           onChange={e => setCustomInput(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustom(); } }}
-          placeholder="Add custom model ID..."
+          placeholder={singleSelect ? 'Or enter a model ID...' : 'Add custom model ID...'}
           className="flex-1 bg-bg-tertiary border border-border rounded px-2.5 py-1 text-xs font-mono"
         />
         <button
@@ -773,16 +859,16 @@ function ModelPicker({
           disabled={!customInput.trim()}
           className="px-3 py-1 text-xs bg-bg-tertiary border border-border rounded hover:border-border-hover transition-colors disabled:opacity-30"
         >
-          Add
+          {singleSelect ? 'Use' : 'Add'}
         </button>
       </div>
 
       {selected.length > 0 && (
         <p className="text-xs text-text-dim/50 mt-1.5">
-          {selected.length} selected: {selected.map(id => {
+          {singleSelect ? '' : `${selected.length} selected: `}{selected.map(id => {
             const opt = options.find(o => o.id === id);
             return opt ? opt.label : id;
-          }).join(', ')}
+          }).join(', ')} <span className="opacity-60">— * = default</span>
         </p>
       )}
     </div>
@@ -971,23 +1057,43 @@ function GraphView({ graph }: { graph: SkillGraph }) {
     incoming.get(edge.to)!.push(edge);
   }
 
-  // Build adjacency lookup for matrix
+  // Only show nodes involved in dependencies in the tree view
+  const connectedNodes = nodes.filter(n => outgoing.get(n)!.length > 0 || incoming.get(n)!.length > 0);
+  const isolatedCount = nodes.length - connectedNodes.length;
+
+  // Build adjacency lookup for matrix — only for connected nodes
   const edgeLookup = new Map<string, string[]>();
   for (const edge of edges) {
     edgeLookup.set(`${edge.from}→${edge.to}`, edge.mentions);
   }
 
+  // Summary
+  const summary = `${nodes.length} skills, ${edges.length} dependencies${isolatedCount > 0 ? `, ${isolatedCount} isolated` : ''}`;
+
+  if (edges.length === 0) {
+    return (
+      <div className="text-sm">
+        <p className="text-text-dim">{summary}</p>
+        <p className="text-text-dim mt-1">No cross-references found between the loaded skills.</p>
+      </div>
+    );
+  }
+
+  // For matrix, only show connected nodes (avoids huge empty matrices)
+  const matrixNodes = connectedNodes.length > 0 ? connectedNodes : nodes;
+  const showMatrix = matrixNodes.length <= 30;
+
   return (
-    <div className="space-y-6">
-      {/* Tree view */}
-      <div className="font-mono text-sm space-y-1">
-        {nodes.map(node => {
+    <div className="space-y-4">
+      <p className="text-xs text-text-dim">{summary}</p>
+
+      {/* Tree view — only connected nodes */}
+      <div className="font-mono text-sm space-y-1 max-h-64 overflow-y-auto">
+        {connectedNodes.map(node => {
           const deps = outgoing.get(node)!;
           const depBy = incoming.get(node)!;
           let badge = '';
-          if (deps.length === 0 && depBy.length === 0) {
-            badge = ' (isolated)';
-          } else if (depBy.length > 0 && deps.length === 0) {
+          if (depBy.length > 0 && deps.length === 0) {
             badge = ` (depended on by ${depBy.length})`;
           }
 
@@ -1009,59 +1115,77 @@ function GraphView({ graph }: { graph: SkillGraph }) {
         })}
       </div>
 
-      {/* Dependency Matrix */}
-      <div>
-        <h3 className="text-xs font-bold text-text-dim uppercase tracking-wider mb-2">Adjacency Matrix</h3>
-        <div className="overflow-x-auto">
-          <table className="text-xs font-mono border-collapse">
-            <thead>
-              <tr>
-                <th className="px-2 py-1 text-left text-text-dim border border-border bg-bg-tertiary">
-                  from ↓ / to →
-                </th>
-                {nodes.map(col => (
-                  <th key={col} className="px-2 py-1 text-center border border-border bg-bg-tertiary text-text-dim" title={col}>
-                    {col.length > 12 ? col.slice(0, 11) + '…' : col}
+      {/* Adjacency Matrix — only for connected nodes, capped at 30 */}
+      {showMatrix ? (
+        <div>
+          <h3 className="text-xs font-bold text-text-dim uppercase tracking-wider mb-2">Adjacency Matrix</h3>
+          <div className="overflow-x-auto">
+            <table className="text-xs font-mono border-collapse">
+              <thead>
+                <tr>
+                  <th className="px-2 py-1 text-left text-text-dim border border-border bg-bg-tertiary">
+                    from ↓ / to →
                   </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {nodes.map(row => (
-                <tr key={row}>
-                  <td className="px-2 py-1 border border-border bg-bg-tertiary font-bold whitespace-nowrap">
-                    {row}
-                  </td>
-                  {nodes.map(col => {
-                    const mentions = edgeLookup.get(`${row}→${col}`);
-                    const isSelf = row === col;
-                    return (
-                      <td
-                        key={col}
-                        className={`px-2 py-1 text-center border border-border ${
-                          isSelf
-                            ? 'bg-bg-tertiary text-text-dim/30'
-                            : mentions
-                              ? 'bg-accent/15 text-accent'
-                              : 'text-text-dim/20'
-                        }`}
-                        title={mentions ? `${row} → ${col}: ${mentions.join(', ')}` : ''}
-                      >
-                        {isSelf ? '·' : mentions ? '●' : '·'}
-                      </td>
-                    );
-                  })}
+                  {matrixNodes.map(col => (
+                    <th key={col} className="px-2 py-1 text-center border border-border bg-bg-tertiary text-text-dim" title={col}>
+                      {col.length > 12 ? col.slice(0, 11) + '…' : col}
+                    </th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {matrixNodes.map(row => (
+                  <tr key={row}>
+                    <td className="px-2 py-1 border border-border bg-bg-tertiary font-bold whitespace-nowrap">
+                      {row}
+                    </td>
+                    {matrixNodes.map(col => {
+                      const mentions = edgeLookup.get(`${row}→${col}`);
+                      const isSelf = row === col;
+                      return (
+                        <td
+                          key={col}
+                          className={`px-2 py-1 text-center border border-border transition-colors ${
+                            isSelf
+                              ? 'bg-bg-tertiary text-text-dim/30'
+                              : mentions
+                                ? 'bg-accent/15 text-accent hover:bg-accent/30 cursor-help'
+                                : 'text-text-dim/20 hover:bg-bg-tertiary'
+                          }`}
+                          title={mentions ? `${row} → ${col}: ${mentions.join(', ')}` : `${row} → ${col}: no dependency`}
+                        >
+                          {isSelf ? '·' : mentions ? '●' : '·'}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-text-dim mt-2">
+            <span className="text-accent">●</span> = dependency found — hover cells for details
+          </p>
         </div>
-        <p className="text-xs text-text-dim mt-2">
-          <span className="text-accent">●</span> = dependency found — hover cells for details
+      ) : (
+        <p className="text-xs text-text-dim">
+          Adjacency matrix hidden ({matrixNodes.length} connected skills — too large to render). Use the tree view above.
         </p>
-      </div>
+      )}
     </div>
   );
+}
+
+function truncateAtSentence(text: string, maxLen: number): string {
+  if (text.length <= maxLen) return text;
+  const truncated = text.slice(0, maxLen);
+  const lastPeriod = truncated.lastIndexOf('.');
+  const lastExcl = truncated.lastIndexOf('!');
+  const lastQ = truncated.lastIndexOf('?');
+  const lastBreak = Math.max(lastPeriod, lastExcl, lastQ);
+  if (lastBreak > maxLen * 0.4) return truncated.slice(0, lastBreak + 1);
+  const lastSpace = truncated.lastIndexOf(' ');
+  return lastSpace > 0 ? truncated.slice(0, lastSpace) + '...' : truncated + '...';
 }
 
 function scoreColor(score: number): string {
