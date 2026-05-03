@@ -1,14 +1,14 @@
 import { LangfuseSpanProcessor } from '@langfuse/otel';
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 
-export let langfuseSpanProcessor: LangfuseSpanProcessor;
-
 export function register() {
-  langfuseSpanProcessor = new LangfuseSpanProcessor();
+  const processor = new LangfuseSpanProcessor();
 
   const provider = new NodeTracerProvider({
-    spanProcessors: [langfuseSpanProcessor],
+    spanProcessors: [processor],
   });
 
   provider.register();
+
+  (globalThis as { __langfuseProcessor?: LangfuseSpanProcessor }).__langfuseProcessor = processor;
 }
