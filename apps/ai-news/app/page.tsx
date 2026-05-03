@@ -6,18 +6,24 @@ import { catId } from '@/lib/cat-id';
 
 export const dynamic = 'force-dynamic';
 
-function relativeTime(isoDate: string | undefined, direction: 'ago' | 'until', intervalHours: number): string {
-  if (!isoDate) return direction === 'until' ? `~${intervalHours}h` : '—';
-  const refMs = direction === 'until'
-    ? new Date(isoDate).getTime() + intervalHours * 60 * 60 * 1000
-    : new Date(isoDate).getTime();
-  const diffMins = Math.round((direction === 'until' ? refMs - Date.now() : Date.now() - refMs) / 60000);
-  if (diffMins <= 0) return direction === 'until' ? 'soon' : 'just now';
-  if (diffMins < 60) return `${diffMins}m${direction === 'ago' ? ' ago' : ''}`;
+function timeAgo(isoDate: string | undefined): string {
+  if (!isoDate) return '—';
+  const diffMins = Math.round((Date.now() - new Date(isoDate).getTime()) / 60000);
+  if (diffMins <= 0) return 'just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
   const h = Math.floor(diffMins / 60);
   const m = diffMins % 60;
-  const str = m === 0 ? `${h}h` : `${h}h ${m}m`;
-  return direction === 'ago' ? `${str} ago` : str;
+  return m === 0 ? `${h}h ago` : `${h}h ${m}m ago`;
+}
+
+function nextRunIn(): string {
+  const now = new Date();
+  const minsUntil = (24 * 60 - (now.getUTCHours() * 60 + now.getUTCMinutes()) + 8 * 60) % (24 * 60);
+  if (minsUntil === 0) return 'soon';
+  if (minsUntil < 60) return `${minsUntil}m`;
+  const h = Math.floor(minsUntil / 60);
+  const m = minsUntil % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
 }
 
 function formatItemDate(published_at: string | null | undefined): string {
@@ -71,9 +77,8 @@ export default async function Page() {
     }
   }
 
-  const intervalHours = parseInt(process.env.RUN_INTERVAL_HOURS ?? '6', 10);
-  const lastRan = relativeTime(displayRun?.created_at, 'ago', intervalHours);
-  const nextRun = relativeTime(displayRun?.created_at, 'until', intervalHours);
+  const lastRan = timeAgo(displayRun?.created_at);
+  const nextRun = nextRunIn();
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8 flex gap-8">
@@ -175,7 +180,7 @@ export default async function Page() {
 
         {displayRun?.status === 'complete' && (
           <p className="text-xs text-text-dim/40 mt-4">
-            {displayRun.item_count} items · runs every {intervalHours}h
+            {displayRun.item_count} items · runs daily at 08:00 UTC
           </p>
         )}
       </div>
