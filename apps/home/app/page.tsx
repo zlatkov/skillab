@@ -56,6 +56,14 @@ export default function Home() {
           >
             X
           </a>
+          <a
+            href="https://medium.com/@zlatkov"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-text-dim hover:text-accent transition-colors"
+          >
+            Medium
+          </a>
         </div>
       </div>
     </div>
