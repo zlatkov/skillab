@@ -87,7 +87,7 @@ export async function runNewsAgent(): Promise<NewsItem[]> {
     },
   });
 
-  const model = process.env.OPENROUTER_MODEL ?? 'google/gemini-2.5-flash';
+  const model = process.env.OPENROUTER_MODEL ?? 'openrouter/auto';
 
   // Fetch all sources in parallel
   const [hnResult, ...braveResults] = await Promise.allSettled([

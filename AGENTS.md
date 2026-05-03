@@ -133,5 +133,5 @@ Items are scored 1-10; only score ≥ 6 are stored. Categories are sorted by ite
 | `SUPABASE_URL` | Yes | Supabase project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | Yes | Service role key (server-side only) |
 | `CRON_SECRET` | Yes | Protects the cron endpoint |
-| `OPENROUTER_MODEL` | No | Override model (default: `google/gemini-2.5-flash`) |
+| `OPENROUTER_MODEL` | No | Override model (default: `openrouter/auto`) |
 | `NEXT_PUBLIC_HOME_URL` | Dev only | Falls back to `https://zlatkov.ai` |
