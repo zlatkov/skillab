@@ -1,5 +1,3 @@
-import Link from 'next/link';
-
 export default function Home() {
   return (
     <div className="min-h-screen flex items-center justify-center px-4">
@@ -23,15 +21,15 @@ export default function Home() {
         {/* Projects */}
         <div className="mb-8">
           <h2 className="text-xs font-bold text-text-dim uppercase tracking-wider mb-3">Projects</h2>
-          <Link
-            href="/skillab"
+          <a
+            href={process.env.NEXT_PUBLIC_SKILLAB_URL ?? 'https://skillab.zlatkov.ai'}
             className="block border border-border rounded-lg p-4 bg-bg-secondary hover:border-accent/50 transition-colors group"
           >
             <span className="text-accent font-bold group-hover:underline">skillab</span>
             <p className="text-text-dim text-sm mt-1">
               Tools for working with AI Agent Skills (SKILL.md files)
             </p>
-          </Link>
+          </a>
         </div>
 
         {/* Links */}

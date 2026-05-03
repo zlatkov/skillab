@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useState, useRef, useEffect, useCallback } from 'react';
 import type {
   SkillDefinition,
@@ -441,7 +440,7 @@ export default function Home() {
       {/* Left sidebar nav */}
       <nav className="hidden md:block w-36 shrink-0">
         <div className="sticky top-8">
-          <Link href="/" className="text-xs text-text-dim hover:text-accent transition-colors">&larr; Home</Link>
+          <a href={process.env.NEXT_PUBLIC_HOME_URL ?? 'https://zlatkov.ai'} className="text-xs text-text-dim hover:text-accent transition-colors">&larr; Home</a>
           <div className="mt-3 mb-4">
             <span className="text-lg font-bold text-accent">skillab</span>
             <span className="text-text-dim text-xs ml-1.5">v0.3.0</span>
@@ -470,7 +469,7 @@ export default function Home() {
       <div className="flex-1 min-w-0">
       {/* Mobile header */}
       <header className="mb-8 md:hidden">
-        <Link href="/" className="text-xs text-text-dim hover:text-accent transition-colors">&larr; Home</Link>
+        <a href={process.env.NEXT_PUBLIC_HOME_URL ?? 'https://zlatkov.ai'} className="text-xs text-text-dim hover:text-accent transition-colors">&larr; Home</a>
         <div className="flex items-baseline gap-3 mt-2">
           <h1 className="text-2xl font-bold text-accent">skillab</h1>
           <span className="text-text-dim text-sm">v0.3.0</span>
@@ -1449,7 +1448,7 @@ function GraphView({ graph }: { graph: SkillGraph }) {
               </div>
               {deps.map((edge, i) => (
                 <div key={i} className="ml-4 text-text-dim">
-                  {i === deps.length - 1 ? '\u2514' : '\u251C'}&#9472;&#9472;&#9654; {edge.to}{' '}
+                  {i === deps.length - 1 ? '└' : '├'}&#9472;&#9472;&#9654; {edge.to}{' '}
                   <span className="opacity-60">({edge.mentions.join(', ')})</span>
                 </div>
               ))}

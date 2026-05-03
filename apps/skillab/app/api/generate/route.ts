@@ -70,7 +70,7 @@ function createModel(
         baseURL: 'https://openrouter.ai/api/v1',
         apiKey,
         headers: {
-          'HTTP-Referer': 'https://skillab.dev',
+          'HTTP-Referer': 'https://skillab.zlatkov.ai',
           'X-Title': 'skillab',
         },
       })(modelId);
