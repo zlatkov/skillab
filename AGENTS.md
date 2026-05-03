@@ -1,112 +1,137 @@
 # AGENTS.md
 
-## Project Overview
+## Monorepo Overview
 
-`skillab` is a Next.js web app that provides tools for working with Agent Skills (SKILL.md files). It runs as a browser-first application — all orchestration logic executes client-side, with a single thin API route (`/api/generate`) that proxies LLM calls to avoid CORS restrictions.
-
-## Architecture
+This is a Turborepo monorepo with three Next.js apps:
 
 ```
-app/
-├── page.tsx              # Main UI: skill input, tool selector, config, results
-├── layout.tsx            # Root layout with metadata
-├── globals.css           # Dark theme, amber accent, custom scrollbar
-└── api/
-    └── generate/
-        └── route.ts      # Thin LLM proxy — creates provider models, calls generateText
-
-lib/
-├── types.ts              # Shared types, provider model presets, constants
-├── skill.ts              # Skill parser, GitHub fetcher, context builder, dependency graph
-└── engine.ts             # Client-side evaluation pipeline with progress callbacks
+apps/
+├── home/       Personal home page (zlatkov.ai)
+├── skillab/    Skill evaluator + dependency graph (skillab.zlatkov.ai)
+└── ai-news/    AI news digest agent (ainews.zlatkov.ai)
 ```
 
-## Key Design Decisions
+Each app has its own `package.json`, `next.config.ts`, `tsconfig.json`, and `vercel.json` where applicable. They share no code packages — each `lib/` is app-local.
 
-- **Browser-first**: Parsing, context building, eval orchestration, and graph building all run in the browser. The API route only exists because LLM providers don't support CORS.
-- **No CLI**: Previously a CLI tool, now purely a web app. No `bin`, no npm publishing.
-- **Browser-compatible frontmatter parser**: Replaces `gray-matter` (which requires Node.js `fs`) with a custom parser that handles YAML block scalars (`>` and `|`).
-- **GitHub API for repo scanning**: Uses the Git Trees API with `recursive=1` to find SKILL.md files. Runs client-side since GitHub API supports CORS.
+---
 
-## Three Model Roles
+## apps/home
 
-1. **Test models** — the models being evaluated. Receive the skill-injected prompt and are scored.
-2. **Generator models** — generate test prompts from the skill definition. Configurable in Advanced Options.
-3. **Judge models** — evaluate test model responses for trigger accuracy and compliance.
+Static home page. No API routes, no environment variables at runtime. Links to other apps via `NEXT_PUBLIC_SKILLAB_URL` and `NEXT_PUBLIC_AINEWS_URL` (fall back to production URLs).
 
-All three use the same provider. Each provider has preset defaults. Generator and judge models support fallback chains with retry.
+---
 
-## Tools
+## apps/skillab
 
-### Skill Evaluator
+Web toolkit for testing and visualising AI Agent Skills (SKILL.md files).
 
-The evaluation pipeline runs in six stages: **Parse → Build Context → Generate Prompts → Test → Evaluate → Report**.
-
-#### Parse
-`lib/skill.ts` — `parseSkillContent()` extracts name, description, and body from SKILL.md content. Uses a custom `parseFrontmatter()` that handles YAML block scalars. Falls back to first heading for name, first paragraph for description.
-
-#### Build Context
-`lib/skill.ts` — `buildTriggerSystemPrompt()` and `buildComplianceSystemPrompt()`. The trigger prompt mixes the target skill with 3 dummy distractors (git-commit-helper, api-documentation, test-generator) plus any sibling skills from a batch. The compliance prompt includes full skill instructions.
-
-#### Generate Test Prompts
-`lib/engine.ts` — A generator model creates N positive + N negative test prompts. Falls back through the generator model list on failure with retry. Falls back to hardcoded generic prompts if all generators fail.
-
-#### Run Trigger Tests
-Each prompt is sent to each test model with the skill-injected system prompt via `/api/generate`.
-
-#### Evaluate
-A judge model evaluates each response:
-- **Trigger judgment** — `{triggered, correct, reason}`
-- **Compliance judgment** (positive prompts that triggered correctly) — The test model is re-prompted with full instructions. If the skill references tools (WebFetch, BraveSearch, WebSearch, Read, Write, Edit, Bash, Grep, Glob), mock tool definitions are provided so the model can make structured tool calls. The judge scores `{compliant, score (0-100), reason}`.
-
-Each eval item makes 1 API call for negative prompts, or up to 3 for positive prompts (trigger judge + compliance run + compliance judge).
-
-#### Report
-Results displayed in a table per skill. Batch mode adds a combined summary with per-skill averages. JSON export available.
-
-### Dependency Graph
-
-`lib/skill.ts` — `buildDependencyGraph()` builds a graph between skills by scanning each skill's raw content for:
-- **Name mentions** — word-boundary regex match for other skill names
-- **Path references** — patterns like `skills/other-skill/`
-- **Frontmatter fields** — skill names after `dependencies:`, `requires:`, `uses:`, `depends_on:`, or `related:`
-
-Renders as a tree view with box-drawing characters plus an adjacency matrix. No API key required.
-
-## API Route
-
-`app/api/generate/route.ts` — Thin proxy that:
-1. Creates a provider-specific model instance (OpenRouter, OpenAI, Anthropic, Google, Azure)
-2. Calls `generateText()` from the Vercel AI SDK
-3. Returns `{text, toolCalls, steps}`
-4. Includes mock tool definitions when `useMockTools: true`
-5. Enhanced error handling extracts underlying provider errors from AI SDK error wrappers
-
-## Scoring
-
-- **Overall score**: `trigger_accuracy × 50 + compliance_accuracy × 30 + avg_compliance_score/100 × 20`
-- Trigger accuracy: correct triggers and correct non-triggers out of total prompts
-- Compliance: only measured on positive prompts that correctly triggered
-
-## Tech Stack
-
-- Next.js 15 (App Router), React 19, TypeScript
-- Tailwind CSS v4 (dark theme, amber accent `#f59e0b`)
-- Vercel AI SDK (`ai`, `@ai-sdk/openai`, `@ai-sdk/anthropic`, `@ai-sdk/google`, `@ai-sdk/azure`)
-- Zod (schema validation for mock tools)
-
-## Development
-
-```bash
-npm install
-npm run dev
+```
+apps/skillab/
+├── app/
+│   ├── page.tsx              # Main UI — skill input, tool selector, config, results
+│   ├── layout.tsx
+│   ├── globals.css
+│   └── api/
+│       ├── generate/route.ts # LLM proxy — createModel + generateText
+│       └── providers/route.ts # Returns which providers have server-side API keys
+└── lib/
+    ├── types.ts              # Shared types, provider model presets, constants
+    ├── skill.ts              # Skill parser, GitHub fetcher, context builder, dependency graph
+    └── engine.ts             # Client-side evaluation pipeline with progress callbacks
 ```
 
-No environment variables needed for development — API keys are entered in the UI and sent per-request.
+### Key Design Decisions
 
-## Conventions
+- **Browser-first**: Parsing, context building, eval orchestration run client-side. The API route only exists to avoid CORS.
+- **Three model roles**: test models (evaluated), generator models (create prompts), judge models (score responses).
+- **Mock tools**: For compliance testing, mock tool definitions are injected so models can make real structured tool calls.
 
-- All client-side code in `lib/` — no Node.js-specific APIs
-- Provider model presets defined in `lib/types.ts` (`PROVIDER_MODELS`)
-- Single `page.tsx` with sub-components (ModelPicker, GraphView, ResultsTable, etc.)
-- Progress callbacks via `LogEntry` type for real-time UI updates during evaluation
+### Evaluation Pipeline
+
+**Parse → Build Context → Generate Prompts → Test → Evaluate → Report**
+
+1. `parseSkillContent()` — extracts name, description, body from SKILL.md frontmatter
+2. `buildTriggerSystemPrompt()` — mixes target skill with distractor skills in `<available_skills>` XML
+3. Generator model creates N positive + N negative test prompts
+4. Each prompt → each test model via `/api/generate`
+5. Judge model scores trigger accuracy; for triggered positive prompts, compliance is also scored
+6. Results rendered per model with trigger/compliance breakdown
+
+### Scoring
+
+`overall = trigger_accuracy × 50 + compliance_accuracy × 30 + avg_compliance_score/100 × 20`
+
+### Environment Variables
+
+| Variable | Required | Notes |
+|---|---|---|
+| `OPENROUTER_API_KEY` | Optional | Server-side key for OpenRouter (users can BYOK) |
+| `GROQ_API_KEY` | Optional | Server-side key for Groq |
+| `ANTHROPIC_API_KEY` | Optional | Server-side key |
+| `NEXT_PUBLIC_HOME_URL` | Dev only | Falls back to `https://zlatkov.ai` |
+
+---
+
+## apps/ai-news
+
+Automated AI industry news digest. An agent runs on a cron schedule, fetches news from multiple sources, and stores scored/categorized results in Supabase.
+
+```
+apps/ai-news/
+├── app/
+│   ├── page.tsx              # Displays latest completed run, grouped by category
+│   ├── layout.tsx
+│   ├── globals.css
+│   └── api/
+│       └── cron/route.ts     # Cron endpoint — runs agent, stores results
+├── lib/
+│   ├── types.ts              # NewsItem, NewsRun, CATEGORIES
+│   ├── supabase.ts           # Supabase client (service role)
+│   └── agent.ts              # Fetch + LLM scoring logic
+└── vercel.json               # Cron schedule: 08:00 and 20:00 UTC daily
+```
+
+### How the Agent Works
+
+1. **Parallel fetch** — HN Algolia API + 10 Brave Search queries fire simultaneously
+2. **Single LLM call** — All raw results sent to OpenRouter (default: `google/gemini-2.5-flash`) with a scoring prompt
+3. **Structured output** — LLM returns a JSON array of `NewsItem[]` with score ≥ 6
+4. **Store** — Results written to Supabase `news_runs` table
+
+This avoids multi-step agent overhead — parallel fetches + one LLM call is fast and deterministic.
+
+### Supabase Schema
+
+```sql
+create table news_runs (
+  id uuid default gen_random_uuid() primary key,
+  created_at timestamptz default now(),
+  status text not null default 'running',  -- 'running' | 'complete' | 'error'
+  items jsonb not null default '[]',
+  item_count int not null default 0,
+  error text
+);
+create index news_runs_created_at_idx on news_runs (created_at desc);
+```
+
+### Cron Protection
+
+The `/api/cron` endpoint requires `Authorization: Bearer {CRON_SECRET}`. Vercel sends this header automatically for scheduled cron jobs. Manual calls without the secret return 401.
+
+### News Categories
+
+M&A · Funding · Product Launch · Model Release · AI Engineering · Research · Regulation · Partnership · Open Source · Industry
+
+Items are scored 1-10; only score ≥ 6 are stored. Categories are sorted by item count on the page.
+
+### Environment Variables
+
+| Variable | Required | Notes |
+|---|---|---|
+| `OPENROUTER_API_KEY` | Yes | For LLM scoring calls |
+| `BRAVE_API_KEY` | Yes | For Brave Search queries |
+| `SUPABASE_URL` | Yes | Supabase project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | Yes | Service role key (server-side only) |
+| `CRON_SECRET` | Yes | Protects the cron endpoint |
+| `OPENROUTER_MODEL` | No | Override model (default: `google/gemini-2.5-flash`) |
+| `NEXT_PUBLIC_HOME_URL` | Dev only | Falls back to `https://zlatkov.ai` |

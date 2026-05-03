@@ -57,7 +57,9 @@
       "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\Acer\\\\Documents\\\\Projects\\\\skilleval\" -Force | Format-Table -Property Name, @{Name=\"Type\"; Expression={if \\($_.PSIsContainer\\) { \"Directory\" } else { \"File\" }}} -AutoSize)",
       "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\Acer\\\\Documents\\\\Projects\\\\skilleval\\\\app\" -Recurse -Force | Select-Object @{Name=\"Path\"; Expression={$_.FullName.Replace\\(\"C:\\\\Users\\\\Acer\\\\Documents\\\\Projects\\\\skilleval\\\\\", \"\"\\)}}, @{Name=\"Type\"; Expression={if \\($_.PSIsContainer\\) { \"Dir\" } else { \"File\" }}} | Format-Table -AutoSize)",
       "PowerShell(npm *)",
-      "Bash(git *)"
+      "Bash(git *)",
+      "Bash(gh api *)",
+      "PowerShell(New-Item *)"
     ]
   }
 }
