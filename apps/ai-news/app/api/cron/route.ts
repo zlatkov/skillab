@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { runNewsAgent } from '@/lib/agent';
+import { langfuseSpanProcessor } from '@/instrumentation';
 
 export const maxDuration = 300;
 
@@ -28,6 +29,7 @@ export async function GET(request: NextRequest) {
       .update({ status: 'complete', items, item_count: items.length })
       .eq('id', run.id);
 
+    await langfuseSpanProcessor?.forceFlush();
     return NextResponse.json({ ok: true, count: items.length });
   } catch (err) {
     await supabase
@@ -35,6 +37,7 @@ export async function GET(request: NextRequest) {
       .update({ status: 'error', error: String(err) })
       .eq('id', run.id);
 
+    await langfuseSpanProcessor?.forceFlush();
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }
 }

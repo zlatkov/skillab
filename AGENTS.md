@@ -134,4 +134,6 @@ Items are scored 1-10; only score ≥ 6 are stored. Categories are sorted by ite
 | `SUPABASE_SERVICE_ROLE_KEY` | Yes | Service role key (server-side only) |
 | `CRON_SECRET` | Yes | Protects the cron endpoint |
 | `OPENROUTER_MODEL` | No | Override model (default: `openrouter/auto`) |
+| `LANGFUSE_PUBLIC_KEY` | No | Fetch system prompt from Langfuse (falls back to hardcoded) |
+| `LANGFUSE_SECRET_KEY` | No | Langfuse secret key |
 | `NEXT_PUBLIC_HOME_URL` | Dev only | Falls back to `https://zlatkov.ai` |

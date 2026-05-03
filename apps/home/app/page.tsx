@@ -36,7 +36,7 @@ export default function Home() {
           >
             <span className="text-accent font-bold group-hover:underline">ai-news</span>
             <p className="text-text-dim text-sm mt-1">
-              AI industry news, scored and categorized — updated twice daily
+              Recent AI news - scored and categorized
             </p>
           </a>
         </div>

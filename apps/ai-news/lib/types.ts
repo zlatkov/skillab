@@ -5,6 +5,7 @@ export interface NewsItem {
   score: number;
   summary: string;
   source: string;
+  published_at?: string | null;
   hn_points?: number | null;
   hn_comments?: number | null;
   hn_url?: string | null;
