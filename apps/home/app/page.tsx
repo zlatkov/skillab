@@ -72,7 +72,7 @@ export default function Home() {
             {[
               { href: process.env.NEXT_PUBLIC_SKILLAB_URL ?? 'https://skillab.zlatkov.ai', name: 'skillab', desc: 'Tools for working with AI Agent Skills (SKILL.md files)' },
               { href: process.env.NEXT_PUBLIC_AINEWS_URL ?? 'https://ainews.zlatkov.ai', name: 'ai-news', desc: 'An Agent that shows recent AI news' },
-              { href: process.env.NEXT_PUBLIC_OSSLLMS_URL ?? 'https://ossllms.zlatkov.ai', name: 'oss-llms', desc: 'OSS LLM pricing and availability across inference providers' },
+              { href: process.env.NEXT_PUBLIC_OSSLLMS_URL ?? 'https://llms.zlatkov.ai', name: 'oss-llms', desc: 'OSS LLM pricing and availability across inference providers' },
             ].map(p => (
               <a
                 key={p.name}
