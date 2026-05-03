@@ -49,20 +49,20 @@ export default function Home() {
             LinkedIn
           </a>
           <a
-            href="https://x.com/a_zlatkov"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-text-dim hover:text-accent transition-colors"
-          >
-            X
-          </a>
-          <a
             href="https://medium.com/@zlatkov"
             target="_blank"
             rel="noopener noreferrer"
             className="text-text-dim hover:text-accent transition-colors"
           >
             Medium
+          </a>
+          <a
+            href="https://x.com/a_zlatkov"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-text-dim hover:text-accent transition-colors"
+          >
+            X
           </a>
         </div>
       </div>
