@@ -443,7 +443,6 @@ export default function Home() {
           <a href={process.env.NEXT_PUBLIC_HOME_URL ?? 'https://zlatkov.ai'} className="text-xs text-text-dim hover:text-accent transition-colors">&larr; Home</a>
           <div className="mt-3 mb-4">
             <span className="text-lg font-bold text-accent">skillab</span>
-            <span className="text-text-dim text-xs ml-1.5">v0.3.0</span>
           </div>
           <ul className="space-y-2 text-xs">
             {navItems.map(item => (
@@ -472,7 +471,6 @@ export default function Home() {
         <a href={process.env.NEXT_PUBLIC_HOME_URL ?? 'https://zlatkov.ai'} className="text-xs text-text-dim hover:text-accent transition-colors">&larr; Home</a>
         <div className="flex items-baseline gap-3 mt-2">
           <h1 className="text-2xl font-bold text-accent">skillab</h1>
-          <span className="text-text-dim text-sm">v0.3.0</span>
         </div>
         <p className="text-text-dim text-sm mt-1">
           Tools for working with Agent Skills (SKILL.md files)
