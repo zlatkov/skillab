@@ -9,6 +9,7 @@
     "start": "next start --port 3001"
   },
   "dependencies": {
+    "@zlatkov/styles": "*",
     "@ai-sdk/anthropic": "^3.0.74",
     "@ai-sdk/azure": "^3.0.59",
     "@ai-sdk/google": "^3.0.67",

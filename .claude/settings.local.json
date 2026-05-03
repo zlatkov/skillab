@@ -59,7 +59,17 @@
       "PowerShell(npm *)",
       "Bash(git *)",
       "Bash(gh api *)",
-      "PowerShell(New-Item *)"
+      "PowerShell(New-Item *)",
+      "WebFetch(domain:bird.fast)",
+      "Bash(New-Item *)",
+      "WebFetch(domain:langfuse.com)",
+      "Bash(Copy-Item *)",
+      "PowerShell(Copy-Item *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\Acer\\\\Documents\\\\Projects\\\\skilleval\\\\apps\\\\ai-news\" -Recurse -Force)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(Sort-Object)",
+      "Bash(Remove-Item *)",
+      "PowerShell(Join-Path *)"
     ]
   }
 }

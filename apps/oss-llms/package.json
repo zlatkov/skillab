@@ -1,21 +1,16 @@
 {
-  "name": "ai-news",
+  "name": "oss-llms",
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --port 3002",
+    "dev": "next dev --port 3003",
     "build": "next build",
-    "start": "next start --port 3002"
+    "start": "next start --port 3003"
   },
   "dependencies": {
     "@zlatkov/styles": "*",
-    "@ai-sdk/openai": "^3.0.58",
-    "@langfuse/otel": "^5.2.0",
-    "@opentelemetry/sdk-trace-node": "^2.7.1",
     "@supabase/supabase-js": "^2.0.0",
     "@vercel/analytics": "^2.0.1",
-    "ai": "^6.0.174",
-    "langfuse": "^3.38.20",
     "next": "^15.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

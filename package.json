@@ -2,13 +2,14 @@
   "name": "zlatkov",
   "private": true,
   "packageManager": "npm@11.6.2",
-  "workspaces": ["apps/*"],
+  "workspaces": ["apps/*", "packages/*"],
   "scripts": {
     "dev": "turbo dev",
     "build": "turbo build",
     "dev:home": "turbo dev --filter=home",
     "dev:skillab": "turbo dev --filter=skillab",
-    "dev:ainews": "turbo dev --filter=ai-news"
+    "dev:ainews": "turbo dev --filter=ai-news",
+    "dev:ossllms": "turbo dev --filter=oss-llms"
   },
   "devDependencies": {
     "turbo": "^2.0.0"
