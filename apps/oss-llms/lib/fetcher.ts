@@ -48,31 +48,20 @@ export async function fetchAllProviders(): Promise<FetchResult> {
     ...unwrap(novita, 'novita'),
   ];
 
-  // Dedup direct entries by (providerId, providerModelId)
-  const directSeen = new Set<string>();
-  const dedupedDirect: ModelEntry[] = [];
+  // Direct fetchers win over OpenRouter-derived entries — direct APIs have
+  // more accurate pricing and real rate limits. Key by (modelId, providerId).
+  const merged = new Map<string, ModelEntry>();
   for (const entry of directEntries) {
-    const key = `${entry.providerId}:${entry.providerModelId}`;
-    if (!directSeen.has(key)) {
-      directSeen.add(key);
-      dedupedDirect.push(entry);
-    }
+    const key = `${entry.modelId}::${entry.providerId}`;
+    if (!merged.has(key)) merged.set(key, entry);
   }
 
-  // Dedup OpenRouter by modelId — free/paid variants share the same modelId after
-  // normalisation, which would violate the unique (run_id, model_id, provider_id) constraint.
-  // Prefer the free variant when both exist.
-  const orEntries = unwrap(openrouter, 'openrouter');
-  const orByModelId = new Map<string, ModelEntry>();
-  for (const entry of orEntries) {
-    const existing = orByModelId.get(entry.modelId);
-    if (!existing || entry.freeTier) {
-      orByModelId.set(entry.modelId, entry);
-    }
+  for (const entry of unwrap(openrouter, 'openrouter')) {
+    const key = `${entry.modelId}::${entry.providerId}`;
+    if (!merged.has(key)) merged.set(key, entry);
   }
-  const dedupedOR = Array.from(orByModelId.values());
 
-  const allEntries = [...dedupedDirect, ...dedupedOR];
+  const allEntries = Array.from(merged.values());
 
   const providerResults: Record<string, number> = {};
   for (const entry of allEntries) {
